@@ -1,8 +1,9 @@
 import { useState, useEffect, createContext, useContext } from "react";
 import type { ReactNode } from "react";
 import {
-  listSales, listUsers, createUser, createSale, updateSale,
-  displayName, type ApiSale,
+  listSales, createSale, updateSale,
+  login as apiLogin, logout as apiLogout, me as apiMe,
+  displayName, type ApiSale, type ApiUser,
 } from "./api";
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
@@ -166,6 +167,56 @@ const fromApi = (s: ApiSale): Sale => ({
   agentId: s.agent?.id ?? null,
 });
 
+// ─── Auth (session-based) ────────────────────────────────────────────────────
+
+interface AuthContextValue {
+  user: ApiUser | null;
+  loading: boolean;
+  login: (email: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
+}
+
+const AuthContext = createContext<AuthContextValue | null>(null);
+
+const useAuth = (): AuthContextValue => {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
+  return ctx;
+};
+
+const AuthProvider = ({ children }: { children: ReactNode }) => {
+  const [user, setUser] = useState<ApiUser | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    apiMe()
+      .then(u => setUser(u))
+      .catch(() => setUser(null))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const login = async (email: string, password: string) => {
+    const u = await apiLogin(email, password);
+    setUser(u);
+  };
+
+  const logout = async () => {
+    try {
+      await apiLogout();
+    } finally {
+      setUser(null);
+    }
+  };
+
+  return (
+    <AuthContext.Provider value={{ user, loading, login, logout }}>
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
+// ─── Sales context ────────────────────────────────────────────────────────
+
 interface SalesContextValue {
   sales: Sale[];
   loading: boolean;
@@ -186,25 +237,16 @@ const useSales = (): SalesContextValue => {
 };
 
 const SalesProvider = ({ children }: { children: ReactNode }) => {
+  const { user } = useAuth();
+  const currentAgentId = user?.id ?? null;
   const [sales, setSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [currentAgentId, setCurrentAgentId] = useState<number | null>(null);
 
   const reload = async () => {
     setLoading(true);
     setError(null);
     try {
-      let users = await listUsers();
-      if (users.length === 0) {
-        const u = await createUser({
-          email: "agent@bouyguestelecom.fr",
-          password: "password",
-          roles: ["ROLE_USER"],
-        });
-        users = [u];
-      }
-      setCurrentAgentId(users[0].id);
       const data = await listSales();
       setSales(data.map(fromApi));
     } catch (e) {
@@ -449,10 +491,30 @@ const Header = ({ title, subtitle }: { title: string; subtitle?: string }) => (
 
 // ─── LOGIN ────────────────────────────────────────────────────────────────────
 
-const LoginScreen = ({ onLogin }: { onLogin: (r: Role) => void }) => {
+const LoginScreen = () => {
+  const { login } = useAuth();
   const [role, setRole] = useState<Role>("agent");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [email, setEmail] = useState("agent@bouyguestelecom.fr");
+  const [password, setPassword] = useState("password");
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const selectRole = (r: Role) => {
+    setRole(r);
+    setEmail(r === "agent" ? "agent@bouyguestelecom.fr" : "superviseur@bouyguestelecom.fr");
+  };
+
+  const submit = async () => {
+    setError(null);
+    setSubmitting(true);
+    try {
+      await login(email, password);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Identifiants invalides");
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <div className="min-h-screen flex" style={{ fontFamily: "'Inter', sans-serif" }}>
@@ -501,7 +563,7 @@ const LoginScreen = ({ onLogin }: { onLogin: (r: Role) => void }) => {
             {(["agent", "superviseur"] as Role[]).map(r => (
               <button
                 key={r}
-                onClick={() => setRole(r)}
+                onClick={() => selectRole(r)}
                 className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all ${
                   role === r ? "bg-white text-[#1D4ED8] shadow-sm" : "text-slate-400 hover:text-slate-600"
                 }`}
@@ -532,11 +594,15 @@ const LoginScreen = ({ onLogin }: { onLogin: (r: Role) => void }) => {
                 className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-[#1D4ED8] transition-all"
               />
             </div>
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl px-4 py-2.5">{error}</div>
+            )}
             <button
-              onClick={() => onLogin(role)}
-              className="w-full bg-[#1D4ED8] hover:bg-[#1E40AF] text-white py-3 rounded-xl font-semibold text-sm transition-colors shadow-md shadow-blue-200 mt-2"
+              onClick={submit}
+              disabled={submitting}
+              className="w-full bg-[#1D4ED8] hover:bg-[#1E40AF] text-white py-3 rounded-xl font-semibold text-sm transition-colors shadow-md shadow-blue-200 mt-2 disabled:opacity-50"
             >
-              Se connecter
+              {submitting ? "Connexion…" : "Se connecter"}
             </button>
           </div>
 
@@ -1418,19 +1484,44 @@ const GestionBaremes = () => {
 // ─── ROOT ─────────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [view, setView] = useState<View>("login");
-  const [role, setRole] = useState<Role>("agent");
+  return (
+    <AuthProvider>
+      <Root />
+    </AuthProvider>
+  );
+}
 
-  const handleLogin = (r: Role) => {
-    setRole(r);
-    setView(r === "agent" ? "agent-dashboard" : "sup-dashboard");
-  };
+const Root = () => {
+  const { user, loading } = useAuth();
 
-  if (view === "login") return <LoginScreen onLogin={handleLogin} />;
+  if (loading) {
+    return (
+      <div
+        className="min-h-screen flex items-center justify-center bg-slate-50"
+        style={{ fontFamily: "'Inter', sans-serif" }}
+      >
+        <div className="text-slate-400 text-sm">Chargement…</div>
+      </div>
+    );
+  }
+
+  if (!user) return <LoginScreen />;
+
+  return (
+    <SalesProvider>
+      <Dashboard />
+    </SalesProvider>
+  );
+};
+
+const Dashboard = () => {
+  const { user, logout } = useAuth();
+  const role: Role = user?.roles.includes("ROLE_SUPERVISEUR") ? "superviseur" : "agent";
+  const [view, setView] = useState<View>(role === "agent" ? "agent-dashboard" : "sup-dashboard");
 
   const META: Record<View, { title: string; sub: string }> = {
     login:                { title: "",                    sub: "" },
-    "agent-dashboard":    { title: "Tableau de bord",     sub: "Bienvenue Sophie Martin — Juin 2026" },
+    "agent-dashboard":    { title: "Tableau de bord",     sub: `Bienvenue ${displayName(user?.email)} — Juin 2026` },
     "agent-nouvelle-vente":{ title: "Nouvelle vente",     sub: "Saisir une vente pour validation superviseur" },
     "agent-mes-ventes":   { title: "Mes ventes",          sub: "Historique complet de vos ventes saisies" },
     "sup-dashboard":      { title: "Tableau de bord",     sub: "Vue d'ensemble équipe — Juin 2026" },
@@ -1455,16 +1546,14 @@ export default function App() {
   const { title, sub } = META[view];
 
   return (
-    <SalesProvider>
-      <div className="min-h-screen bg-[#F1F5F9]" style={{ fontFamily: "'Inter', sans-serif" }}>
-        <Sidebar role={role} view={view} onNavigate={setView} onLogout={() => setView("login")} />
-        <div className="ml-60">
-          <Header title={title} subtitle={sub} />
-          <main className="pt-[60px] min-h-screen">
-            {renderView()}
-          </main>
-        </div>
+    <div className="min-h-screen bg-[#F1F5F9]" style={{ fontFamily: "'Inter', sans-serif" }}>
+      <Sidebar role={role} view={view} onNavigate={setView} onLogout={() => { void logout(); }} />
+      <div className="ml-60">
+        <Header title={title} subtitle={sub} />
+        <main className="pt-[60px] min-h-screen">
+          {renderView()}
+        </main>
       </div>
-    </SalesProvider>
+    </div>
   );
-}
+};

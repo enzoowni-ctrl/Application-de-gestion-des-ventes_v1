@@ -76,6 +76,15 @@ export const updateSale = (id: number, payload: Record<string, unknown>) =>
 export const deleteSale = (id: number) =>
   http<void>(`/sales/${id}`, { method: "DELETE" });
 
+// ─── Auth ─────────────────────────────────────────────────────────────────────
+
+export const login = (email: string, password: string) =>
+  http<ApiUser>("/login", { method: "POST", body: JSON.stringify({ email, password }) });
+
+export const logout = () => http<void>("/logout", { method: "POST" });
+
+export const me = () => http<ApiUser>("/me");
+
 // ─── Users ────────────────────────────────────────────────────────────────────
 
 export const listUsers = () => http<ApiUser[]>("/users");

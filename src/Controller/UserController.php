@@ -64,8 +64,9 @@ class UserController extends AbstractController
 
         $user = new User();
         $user->setEmail($email);
-        $roles = $data['roles'] ?? [];
-        $user->setRoles(is_array($roles) ? array_values(array_filter($roles, 'is_string')) : []);
+        // Public self-registration only ever grants the base role; elevated
+        // roles (e.g. ROLE_SUPERVISEUR) are granted out-of-band (app:create-user).
+        $user->setRoles(['ROLE_USER']);
         $user->setPassword($this->hasher->hashPassword($user, $password));
 
         $this->em->persist($user);
