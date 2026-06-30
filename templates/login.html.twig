@@ -3,34 +3,64 @@
 {% block title %}Connexion · GestPrimes{% endblock %}
 
 {% block guest %}
-<div class="login-page">
-    <div class="login-card">
-        <div class="login-brand">
-            <div class="brand-logo brand-logo-lg">BT</div>
-            <h1>GestPrimes</h1>
-            <p>Gestion des ventes &amp; rémunération — Bouygues Telecom</p>
+<div class="auth">
+    <div class="auth-left">
+        <div class="auth-brand">
+            <div class="auth-logo">BT</div>
+            <div>
+                <div class="auth-brand-name">GestPrimes</div>
+                <div class="auth-brand-sub">Bouygues Telecom</div>
+            </div>
         </div>
 
-        {% if error %}
-            <div class="flash flash-error">{{ error.messageKey|trans(error.messageData, 'security') }}</div>
-        {% endif %}
+        <div class="auth-pitch">
+            <div class="auth-quote">&ldquo;</div>
+            <p class="auth-pitch-title">Gérez vos ventes FTTH, XGBOX, BBOX, FAM et FSM avec précision.</p>
+            <p class="auth-pitch-sub">Saisie simplifiée, validation rapide, calcul automatique des primes — tout en un seul espace.</p>
+        </div>
 
-        <form method="post">
-            <label class="field">
-                <span>Email</span>
-                <input type="email" name="email" value="{{ last_username }}" required autofocus placeholder="agent@bouyguestelecom.fr">
-            </label>
-            <label class="field">
-                <span>Mot de passe</span>
-                <input type="password" name="password" required placeholder="••••••••">
-            </label>
-            <input type="hidden" name="_csrf_token" value="{{ csrf_token('authenticate') }}">
-            <button type="submit" class="btn btn-primary btn-block">Se connecter</button>
-        </form>
+        <div class="auth-products">
+            <span class="auth-chip">FTTH</span>
+            <span class="auth-chip">XGBOX</span>
+            <span class="auth-chip">FAM</span>
+            <span class="auth-chip">FSM</span>
+            <span class="auth-chip">BBOX</span>
+        </div>
+    </div>
 
-        <div class="login-hint">
-            Comptes de démo (mot de passe <code>password</code>) :<br>
-            agent@ · superviseur@ · chef@bouyguestelecom.fr
+    <div class="auth-right">
+        <div class="auth-box">
+            <div class="auth-head">
+                <div class="auth-logo auth-logo-lg">BT</div>
+                <h1>Connexion</h1>
+                <p>Accès agents &amp; superviseurs</p>
+            </div>
+
+            <div class="auth-roles" id="auth-roles">
+                <button type="button" class="auth-role is-active" data-email="agent@bouyguestelecom.fr">Agent</button>
+                <button type="button" class="auth-role" data-email="superviseur@bouyguestelecom.fr">Superviseur</button>
+            </div>
+
+            {% if error %}
+                <div class="auth-error">{{ error.messageKey|trans(error.messageData, 'security') }}</div>
+            {% endif %}
+
+            <form method="post" class="auth-form">
+                <div class="auth-field">
+                    <label for="auth-email">Adresse email</label>
+                    <input id="auth-email" type="email" name="email" value="{{ last_username|default('agent@bouyguestelecom.fr') }}" required autofocus placeholder="prenom.nom@bouyguestelecom.fr">
+                </div>
+                <div class="auth-field">
+                    <label for="auth-password">Mot de passe</label>
+                    <input id="auth-password" type="password" name="password" required placeholder="••••••••">
+                </div>
+                <input type="hidden" name="_csrf_token" value="{{ csrf_token('authenticate') }}">
+                <button type="submit" class="auth-submit">Se connecter</button>
+            </form>
+
+            <p class="auth-foot">
+                En vous connectant, vous acceptez les conditions d'utilisation internes Bouygues Telecom.
+            </p>
         </div>
     </div>
 </div>

@@ -26,6 +26,19 @@
   }
 
   document.addEventListener("DOMContentLoaded", function () {
+    // Login role selector: prefill email (cosmetic, like the React design).
+    var roles = document.getElementById("auth-roles");
+    if (roles) {
+      var emailInput = document.getElementById("auth-email");
+      roles.querySelectorAll(".auth-role").forEach(function (b) {
+        b.addEventListener("click", function () {
+          roles.querySelectorAll(".auth-role").forEach(function (x) { x.classList.remove("is-active"); });
+          b.classList.add("is-active");
+          if (emailInput) emailInput.value = b.getAttribute("data-email") || "";
+        });
+      });
+    }
+
     var saleForm = document.getElementById("sale-form");
     if (saleForm) wireOffers("type-select", "offre-select", saleForm);
 

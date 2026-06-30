@@ -131,15 +131,37 @@ a { text-decoration: none; color: inherit; }
 .bareme-grid { display: grid; grid-template-columns: repeat(5, 1fr) auto; gap: 12px; align-items: end; }
 .hours-input, .prime-input { width: 78px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; text-align: right; font-family: ui-monospace, monospace; font-size: 13px; }
 
-/* Login */
-.login-page { min-height: 100vh; display: grid; place-items: center; background: linear-gradient(135deg, #0F2056, #1D4ED8); padding: 20px; }
-.login-card { background: #fff; border-radius: 20px; padding: 36px; width: 100%; max-width: 380px; box-shadow: 0 20px 50px rgba(0,0,0,.25); }
-.login-brand { text-align: center; margin-bottom: 22px; }
-.login-brand h1 { margin: 0; font-size: 22px; color: var(--navy); }
-.login-brand p { margin: 6px 0 0; color: var(--muted); font-size: 12.5px; }
-.login-card form { display: flex; flex-direction: column; gap: 14px; }
-.login-hint { margin-top: 18px; text-align: center; font-size: 12px; color: var(--muted); line-height: 1.6; }
-.login-hint code { background: #f1f5f9; padding: 1px 6px; border-radius: 6px; }
+/* Login — two-panel layout (reprise du design React) */
+.auth { min-height: 100vh; display: flex; }
+.auth-left { display: none; flex-direction: column; justify-content: space-between; width: 40%; background: var(--navy); padding: 48px; }
+.auth-brand { display: flex; align-items: center; gap: 12px; }
+.auth-logo { width: 40px; height: 40px; border-radius: 12px; background: var(--blue); color: #fff; font-weight: 700; font-size: 14px; display: flex; align-items: center; justify-content: center; box-shadow: 0 10px 25px rgba(29,78,216,.35); flex-shrink: 0; }
+.auth-brand-name { color: #fff; font-weight: 700; font-size: 14px; }
+.auth-brand-sub { color: rgba(255,255,255,.4); font-size: 12px; }
+.auth-quote { color: rgba(255,255,255,.2); font-size: 72px; font-weight: 700; line-height: .6; margin-bottom: 20px; }
+.auth-pitch-title { color: #fff; font-size: 20px; font-weight: 600; line-height: 1.5; margin: 0 0 14px; }
+.auth-pitch-sub { color: rgba(255,255,255,.5); font-size: 14px; line-height: 1.6; margin: 0; }
+.auth-products { display: flex; gap: 10px; flex-wrap: wrap; }
+.auth-chip { padding: 6px 12px; border-radius: 8px; background: rgba(255,255,255,.1); color: rgba(255,255,255,.6); font-size: 12px; font-weight: 600; }
+.auth-right { flex: 1; display: flex; align-items: center; justify-content: center; background: #F8FAFC; padding: 32px; }
+.auth-box { width: 100%; max-width: 384px; }
+.auth-head { text-align: center; margin-bottom: 32px; }
+.auth-logo-lg { width: 56px; height: 56px; border-radius: 16px; font-size: 20px; margin: 0 auto 16px; box-shadow: 0 10px 25px rgba(191,219,254,.9); }
+.auth-head h1 { margin: 0; font-size: 24px; font-weight: 700; color: var(--navy); }
+.auth-head p { margin: 4px 0 0; color: #94A3B8; font-size: 14px; }
+.auth-roles { display: flex; background: #F1F5F9; border-radius: 12px; padding: 4px; margin-bottom: 24px; }
+.auth-role { flex: 1; border: 0; background: transparent; padding: 8px 0; border-radius: 8px; font-size: 14px; font-weight: 600; color: #94A3B8; cursor: pointer; transition: all .15s; }
+.auth-role.is-active { background: #fff; color: var(--blue); box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+.auth-form { display: flex; flex-direction: column; gap: 16px; }
+.auth-field { display: flex; flex-direction: column; gap: 6px; }
+.auth-field label { font-size: 14px; font-weight: 600; color: #334155; }
+.auth-field input { width: 100%; padding: 12px 16px; border: 1px solid #E2E8F0; border-radius: 12px; font-size: 14px; background: #fff; transition: all .15s; }
+.auth-field input:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px #BFDBFE; }
+.auth-error { background: #FEF2F2; border: 1px solid #FECACA; color: #DC2626; font-size: 14px; border-radius: 12px; padding: 10px 16px; }
+.auth-submit { width: 100%; background: var(--blue); color: #fff; border: 0; padding: 12px; border-radius: 12px; font-weight: 600; font-size: 14px; cursor: pointer; box-shadow: 0 4px 6px rgba(191,219,254,.9); transition: background .15s; margin-top: 4px; }
+.auth-submit:hover { background: #1E40AF; }
+.auth-foot { text-align: center; font-size: 12px; color: #94A3B8; margin-top: 24px; line-height: 1.5; }
+@media (min-width: 1024px) { .auth-left { display: flex; } }
 
 @media (max-width: 900px) {
   .cards { grid-template-columns: repeat(2, 1fr); }
