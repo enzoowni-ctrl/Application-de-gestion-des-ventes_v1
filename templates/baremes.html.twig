@@ -1,0 +1,89 @@
+{% extends 'base.html.twig' %}
+{% set active = 'baremes' %}
+
+{% block title %}Gestion barèmes · GestPrimes{% endblock %}
+{% block heading %}Gestion barèmes{% endblock %}
+{% block subtitle %}Grille de primes datée — la prime d'une vente suit le tarif en vigueur à sa date{% endblock %}
+
+{% block body %}
+{% if can_edit %}
+<form method="post" action="{{ path('app_bareme_new') }}" class="panel bareme-form">
+    <h3>Nouveau barème</h3>
+    <div class="bareme-grid">
+        <label class="field">
+            <span>Produit</span>
+            <select name="produit" id="bareme-type" required>
+                {% for product in offers|keys %}<option value="{{ product }}">{{ product }}</option>{% endfor %}
+            </select>
+        </label>
+        <label class="field">
+            <span>Offre</span>
+            <select name="offre" id="bareme-offre" required></select>
+        </label>
+        <label class="field">
+            <span>Prime (€)</span>
+            <input type="number" name="prime" step="0.01" min="0" required>
+        </label>
+        <label class="field">
+            <span>Date d'effet</span>
+            <input type="date" name="dateEffet" required>
+        </label>
+        <label class="field">
+            <span>Date de fin (option)</span>
+            <input type="date" name="dateFin">
+        </label>
+        <input type="hidden" name="_token" value="{{ csrf_token('bareme_new') }}">
+        <button type="submit" class="btn btn-primary">Ajouter</button>
+    </div>
+</form>
+<div data-offers="{{ offers|json_encode|e('html_attr') }}" id="bareme-offers-data"></div>
+{% endif %}
+
+<div class="table-wrap">
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Produit</th>
+                <th>Offre</th>
+                <th class="num">Prime (€)</th>
+                <th>Date d'effet</th>
+                <th>Date de fin</th>
+                <th>Statut</th>
+                {% if can_edit %}<th class="actions-col">Actions</th>{% endif %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for b in baremes %}
+                <tr class="{{ b.actif ? '' : 'row-muted' }}">
+                    <td class="strong">{{ b.produit }}</td>
+                    <td>{{ b.offre }}</td>
+                    <td class="num mono accent">
+                        {% if can_edit %}
+                            <form method="post" action="{{ path('app_bareme_prime', {id: b.id}) }}" class="inline">
+                                <input type="hidden" name="_token" value="{{ csrf_token('bareme_prime' ~ b.id) }}">
+                                <input type="number" name="prime" step="0.01" min="0" value="{{ b.prime }}" class="prime-input">
+                                <button type="submit" class="btn-icon" title="Mettre à jour">✓</button>
+                            </form>
+                        {% else %}
+                            {{ b.prime|eur }} €
+                        {% endif %}
+                    </td>
+                    <td>{{ b.dateEffet ? b.dateEffet|date('d/m/Y') : '—' }}</td>
+                    <td>{{ b.dateFin ? b.dateFin|date('d/m/Y') : '—' }}</td>
+                    <td><span class="badge {{ b.actif ? 'badge-nette' : 'badge-rejetée' }}">{{ b.actif ? 'Actif' : 'Archivé' }}</span></td>
+                    {% if can_edit %}
+                        <td class="actions-col">
+                            <form method="post" action="{{ path('app_bareme_toggle', {id: b.id}) }}" class="inline">
+                                <input type="hidden" name="_token" value="{{ csrf_token('bareme_toggle' ~ b.id) }}">
+                                <button type="submit" class="btn btn-sm">{{ b.actif ? 'Archiver' : 'Réactiver' }}</button>
+                            </form>
+                        </td>
+                    {% endif %}
+                </tr>
+            {% else %}
+                <tr><td colspan="7" class="empty">Aucun barème.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

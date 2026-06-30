@@ -1,0 +1,51 @@
+{% extends 'base.html.twig' %}
+{% set active = 'dashboard' %}
+
+{% block title %}Tableau de bord · GestPrimes{% endblock %}
+{% block heading %}Tableau de bord{% endblock %}
+{% block subtitle %}Vue d'ensemble — {{ periode }}{% endblock %}
+
+{% block body %}
+<div class="cards">
+    <div class="card card-accent">
+        <div class="card-label">En attente</div>
+        <div class="card-value">{{ pending }}</div>
+        <div class="card-sub">ventes à valider</div>
+    </div>
+    <div class="card">
+        <div class="card-icon green">✓</div>
+        <div class="card-value">{{ total_ventes }}</div>
+        <div class="card-sub">Ventes validées · {{ periode }}</div>
+    </div>
+    <div class="card">
+        <div class="card-icon blue">€</div>
+        <div class="card-value">{{ total_primes|eur }} €</div>
+        <div class="card-sub">Primes distribuées</div>
+    </div>
+    <div class="card">
+        <div class="card-icon purple">∑</div>
+        <div class="card-value">{{ total_ca|eur }} €</div>
+        <div class="card-sub">Chiffre d'affaires</div>
+    </div>
+</div>
+
+<div class="panel">
+    <h3>Primes validées par agent</h3>
+    <p class="panel-sub">Classement — {{ periode }}</p>
+    {% if ranking is empty %}
+        <p class="empty">Aucune vente validée sur la période.</p>
+    {% else %}
+        {% set max = ranking|first.primes %}
+        <div class="ranking">
+            {% for r in ranking %}
+                <div class="rank-row">
+                    <span class="rank-pos">{{ loop.index }}</span>
+                    <span class="rank-name">{{ r.agent.email|display_name }}</span>
+                    <span class="rank-bar"><span style="width: {{ max > 0 ? (r.primes / max * 100)|round : 0 }}%"></span></span>
+                    <span class="rank-val">{{ r.primes|eur }} €</span>
+                </div>
+            {% endfor %}
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

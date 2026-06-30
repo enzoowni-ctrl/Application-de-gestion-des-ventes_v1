@@ -14,9 +14,10 @@ security:
 
     firewalls:
         dev:
-            pattern: ^/(_(profiler|wdt)|css|images|js)/
+            pattern: ^/(_(profiler|wdt)|css|images|js|assets)/
             security: false
-        main:
+        api:
+            pattern: ^/api
             lazy: true
             provider: app_user_provider
             entry_point: App\Security\JsonAuthenticationEntryPoint
@@ -26,6 +27,19 @@ security:
                 password_path: password
             logout:
                 path: api_logout
+        main:
+            lazy: true
+            provider: app_user_provider
+            form_login:
+                login_path: app_login
+                check_path: app_login
+                default_target_path: app_dashboard
+                username_parameter: email
+                password_parameter: password
+                enable_csrf: true
+            logout:
+                path: app_logout
+                target: app_login
 
     access_control:
         - { path: ^/api/login, roles: PUBLIC_ACCESS }
@@ -33,6 +47,8 @@ security:
         - { path: ^/api/baremes, methods: [POST, PUT, PATCH, DELETE], roles: ROLE_SUPERVISEUR }
         - { path: ^/api/work-hours, methods: [POST, PUT], roles: ROLE_SUPERVISEUR }
         - { path: ^/api, roles: ROLE_USER }
+        - { path: ^/login, roles: PUBLIC_ACCESS }
+        - { path: ^/, roles: ROLE_USER }
 
 when@test:
     security:

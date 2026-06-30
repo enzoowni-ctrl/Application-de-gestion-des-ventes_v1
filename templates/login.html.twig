@@ -1,0 +1,37 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Connexion · GestPrimes{% endblock %}
+
+{% block guest %}
+<div class="login-page">
+    <div class="login-card">
+        <div class="login-brand">
+            <div class="brand-logo brand-logo-lg">BT</div>
+            <h1>GestPrimes</h1>
+            <p>Gestion des ventes &amp; rémunération — Bouygues Telecom</p>
+        </div>
+
+        {% if error %}
+            <div class="flash flash-error">{{ error.messageKey|trans(error.messageData, 'security') }}</div>
+        {% endif %}
+
+        <form method="post">
+            <label class="field">
+                <span>Email</span>
+                <input type="email" name="email" value="{{ last_username }}" required autofocus placeholder="agent@bouyguestelecom.fr">
+            </label>
+            <label class="field">
+                <span>Mot de passe</span>
+                <input type="password" name="password" required placeholder="••••••••">
+            </label>
+            <input type="hidden" name="_csrf_token" value="{{ csrf_token('authenticate') }}">
+            <button type="submit" class="btn btn-primary btn-block">Se connecter</button>
+        </form>
+
+        <div class="login-hint">
+            Comptes de démo (mot de passe <code>password</code>) :<br>
+            agent@ · superviseur@ · chef@bouyguestelecom.fr
+        </div>
+    </div>
+</div>
+{% endblock %}
