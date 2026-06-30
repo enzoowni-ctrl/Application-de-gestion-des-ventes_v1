@@ -7,6 +7,7 @@ export interface ApiUser {
   id: number;
   email: string;
   roles: string[];
+  manager?: { id: number; email: string } | null;
 }
 
 export interface ApiSale {
@@ -28,6 +29,7 @@ export interface ApiSale {
   valideParId: { id: number; email: string } | null;
   dateValidation: string | null;
   createdAt: string | null;
+  prime: string | null;
 }
 
 async function http<T>(url: string, init?: RequestInit): Promise<T> {
@@ -91,6 +93,73 @@ export const listUsers = () => http<ApiUser[]>("/users");
 
 export const createUser = (payload: { email: string; password: string; roles?: string[] }) =>
   http<ApiUser>("/users", { method: "POST", body: JSON.stringify(payload) });
+
+export const updateUser = (id: number, payload: { roles?: string[]; manager?: number | null }) =>
+  http<ApiUser>(`/users/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
+
+// ─── Barèmes ─────────────────────────────────────────────────────
+
+export interface ApiBareme {
+  id: number;
+  produit: string;
+  offre: string;
+  prime: string;
+  dateEffet: string;
+  dateFin: string | null;
+  actif: boolean;
+}
+
+export interface BaremePayload {
+  produit: string;
+  offre: string;
+  prime: number;
+  dateEffet: string;
+  dateFin?: string | null;
+  actif?: boolean;
+}
+
+export const listBaremes = () => http<ApiBareme[]>("/baremes");
+
+export const createBareme = (payload: BaremePayload) =>
+  http<ApiBareme>("/baremes", { method: "POST", body: JSON.stringify(payload) });
+
+export const updateBareme = (id: number, payload: Partial<BaremePayload>) =>
+  http<ApiBareme>(`/baremes/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
+
+export const deleteBareme = (id: number) =>
+  http<void>(`/baremes/${id}`, { method: "DELETE" });
+
+// ─── Heures travaillées ─────────────────────────────────────────
+
+export interface ApiWorkHours {
+  id: number;
+  agent: { id: number; email: string } | null;
+  periode: string;
+  heures: string;
+  saisiPar: { id: number; email: string } | null;
+  updatedAt: string | null;
+}
+
+export const listWorkHours = (periode?: string) =>
+  http<ApiWorkHours[]>(`/work-hours${periode ? `?periode=${encodeURIComponent(periode)}` : ""}`);
+
+export const saveWorkHours = (payload: { agent: number; periode: string; heures: number }) =>
+  http<ApiWorkHours>("/work-hours", { method: "POST", body: JSON.stringify(payload) });
+
+// ─── Résultats ─────────────────────────────────────────────
+
+export interface ApiResult {
+  agent: { id: number; email: string };
+  periode: string;
+  ca: number;
+  primes: number;
+  ventes: number;
+  heures: number;
+  caParHeure: number | null;
+}
+
+export const listResults = (periode?: string) =>
+  http<ApiResult[]>(`/results${periode ? `?periode=${encodeURIComponent(periode)}` : ""}`);
 
 // Derive a human display name from an email local part (e.g. sophie.martin -> Sophie Martin).
 export const displayName = (email: string | null | undefined): string => {

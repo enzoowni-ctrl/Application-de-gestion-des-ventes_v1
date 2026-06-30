@@ -2,6 +2,10 @@ security:
     password_hashers:
         Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface: 'auto'
 
+    role_hierarchy:
+        ROLE_SUPERVISEUR: ROLE_USER
+        ROLE_CHEF_PLATEAU: [ROLE_SUPERVISEUR, ROLE_USER]
+
     providers:
         app_user_provider:
             entity:
@@ -26,6 +30,8 @@ security:
     access_control:
         - { path: ^/api/login, roles: PUBLIC_ACCESS }
         - { path: ^/api/users, methods: [POST], roles: PUBLIC_ACCESS }
+        - { path: ^/api/baremes, methods: [POST, PUT, PATCH, DELETE], roles: ROLE_SUPERVISEUR }
+        - { path: ^/api/work-hours, methods: [POST, PUT], roles: ROLE_SUPERVISEUR }
         - { path: ^/api, roles: ROLE_USER }
 
 when@test:

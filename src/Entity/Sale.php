@@ -65,6 +65,12 @@ class Sale
     #[ORM\Column]
     private ?\DateTimeImmutable $createdAt = null;
 
+    /**
+     * Prime computed from the barème in effect at the sale date.
+     */
+    #[ORM\Column(type: 'decimal', precision: 10, scale: 2, nullable: true)]
+    private ?string $prime = null;
+
     public function getId(): ?int
     {
         return $this->id;
@@ -270,6 +276,18 @@ class Sale
     public function setCreatedAt(\DateTimeImmutable $createdAt): static
     {
         $this->createdAt = $createdAt;
+
+        return $this;
+    }
+
+    public function getPrime(): ?string
+    {
+        return $this->prime;
+    }
+
+    public function setPrime(?string $prime): static
+    {
+        $this->prime = $prime;
 
         return $this;
     }

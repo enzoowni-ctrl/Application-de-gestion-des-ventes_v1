@@ -3,7 +3,9 @@ import type { ReactNode } from "react";
 import {
   listSales, createSale, updateSale,
   login as apiLogin, logout as apiLogout, me as apiMe,
-  displayName, type ApiSale, type ApiUser,
+  listBaremes, createBareme, updateBareme,
+  listResults, saveWorkHours,
+  displayName, type ApiSale, type ApiUser, type ApiBareme, type ApiResult,
 } from "./api";
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
@@ -34,14 +36,17 @@ type View =
 // ─── Static Data ──────────────────────────────────────────────────────────────
 
 const OFFERS: Record<Product, string[]> = {
-  FTTH:  ["Série Spéciale", "MUST", "ULTYM", "ESSENTIELLE"],
-  XGBOX: ["XGBOX Start", "XGBOX Pro", "XGBOX Elite"],
-  FAM:   ["FAM Initiale", "FAM Premium"],
-  FSM:   ["FSM Basic", "FSM Plus"],
-  BBOX:  ["BBOX Fit", "BBOX Must", "BBOX Ultym"],
+  FTTH:  ["FIT", "Série Spéciale", "MUST", "ULTYM"],
+  XGBOX: ["XGBOX"],
+  FAM:   ["FAM 2H | PRO | 5Go", "FAM SL 20Go", "FAM SL 130Go", "FAM 150Go", "FAM 200Go | 300Go"],
+  FSM:   ["FSM 2H | PRO | 5Go", "FSM SL 20Go", "FSM SL 130Go", "FSM 150Go", "FSM 200Go | 300Go"],
+  BBOX:  ["BBOX EXTRA"],
 };
 
 const PRODUCTS: Product[] = ["FTTH", "XGBOX", "FAM", "FSM", "BBOX"];
+
+// Date at which the 2026 tariff change takes effect (see barème).
+const CHANGE_DATE = "2026-06-08";
 
 const PRODUCT_COLORS: Record<Product, string> = {
   FTTH:  "#1D4ED8",
@@ -90,23 +95,6 @@ const AGENT_PRIMES = [
   { agent:"Léa Rousseau",  FTTH:0,   XGBOX:50, FAM:0,  FSM:15, BBOX:0  },
 ];
 
-const BAREMES = [
-  { id:1,  produit:"FTTH",  offre:"ULTYM",          prime:45, dateEffet:"2026-01-01", actif:true  },
-  { id:2,  produit:"FTTH",  offre:"MUST",            prime:35, dateEffet:"2026-01-01", actif:true  },
-  { id:3,  produit:"FTTH",  offre:"Série Spéciale",  prime:40, dateEffet:"2026-01-01", actif:true  },
-  { id:4,  produit:"FTTH",  offre:"ESSENTIELLE",     prime:25, dateEffet:"2026-01-01", actif:true  },
-  { id:5,  produit:"XGBOX", offre:"XGBOX Start",     prime:20, dateEffet:"2026-01-01", actif:true  },
-  { id:6,  produit:"XGBOX", offre:"XGBOX Pro",       prime:30, dateEffet:"2026-01-01", actif:true  },
-  { id:7,  produit:"XGBOX", offre:"XGBOX Elite",     prime:50, dateEffet:"2026-01-01", actif:true  },
-  { id:8,  produit:"BBOX",  offre:"BBOX Fit",         prime:15, dateEffet:"2026-01-01", actif:true  },
-  { id:9,  produit:"BBOX",  offre:"BBOX Must",        prime:20, dateEffet:"2026-01-01", actif:true  },
-  { id:10, produit:"BBOX",  offre:"BBOX Ultym",       prime:20, dateEffet:"2026-03-01", actif:true  },
-  { id:11, produit:"BBOX",  offre:"BBOX Ultym",       prime:15, dateEffet:"2026-01-01", actif:false },
-  { id:12, produit:"FAM",   offre:"FAM Initiale",     prime:18, dateEffet:"2026-01-01", actif:true  },
-  { id:13, produit:"FAM",   offre:"FAM Premium",      prime:25, dateEffet:"2026-01-01", actif:true  },
-  { id:14, produit:"FSM",   offre:"FSM Basic",        prime:10, dateEffet:"2026-01-01", actif:true  },
-  { id:15, produit:"FSM",   offre:"FSM Plus",         prime:15, dateEffet:"2026-01-01", actif:true  },
-];
 
 // ─── Sales data (API-backed) ──────────────────────────────────────────────────
 
@@ -143,11 +131,6 @@ export interface NewSaleInput {
   pointVente: string;
 }
 
-const computePrime = (type: string, offre: string): number => {
-  const b = BAREMES.find(x => x.actif && x.produit === type && x.offre === offre);
-  return b ? b.prime : 0;
-};
-
 const fromApi = (s: ApiSale): Sale => ({
   id: s.id,
   date: (s.date ?? "").slice(0, 10),
@@ -162,7 +145,7 @@ const fromApi = (s: ApiSale): Sale => ({
   valeur: Number(s.valeur),
   pointVente: s.pointDeVente ?? "",
   statut: s.statut as Status,
-  prime: computePrime(s.type, s.offre),
+  prime: Number(s.prime ?? 0),
   agent: displayName(s.agent?.email),
   agentId: s.agent?.id ?? null,
 });
@@ -372,12 +355,15 @@ const Toggle = ({ label, value, onChange }: { label: string; value: boolean; onC
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
 
 const Sidebar = ({
-  role, view, onNavigate, onLogout,
+  role, roleLabel, view, onNavigate, onLogout,
 }: {
-  role: Role; view: View; onNavigate: (v: View) => void; onLogout: () => void;
+  role: Role; roleLabel: string; view: View; onNavigate: (v: View) => void; onLogout: () => void;
 }) => {
   const { sales } = useSales();
+  const { user } = useAuth();
   const pendingCount = sales.filter(s => s.statut === "Brute").length;
+  const name = displayName(user?.email);
+  const initials = name.split(" ").map(p => p[0]).slice(0, 2).join("").toUpperCase() || "?";
 
   const agentNav = [
     { view: "agent-dashboard" as View,       icon: LayoutDashboard, label: "Tableau de bord" },
@@ -387,7 +373,7 @@ const Sidebar = ({
   const supNav = [
     { view: "sup-dashboard" as View,  icon: LayoutDashboard, label: "Tableau de bord",     badge: null         },
     { view: "sup-validation" as View, icon: CheckSquare,     label: "File de validation",  badge: pendingCount },
-    { view: "sup-primes" as View,     icon: BarChart2,       label: "Tableau des primes",  badge: null         },
+    { view: "sup-primes" as View,     icon: BarChart2,       label: "Résultats & primes",   badge: null         },
     { view: "sup-baremes" as View,    icon: Settings,        label: "Gestion barèmes",     badge: null         },
   ];
   const navItems = role === "agent" ? agentNav : supNav;
@@ -410,7 +396,7 @@ const Sidebar = ({
       {/* Role label */}
       <div className="px-5 pt-5 pb-2">
         <span className="text-[10px] font-bold text-white/30 uppercase tracking-widest">
-          {role === "agent" ? "Agent Commercial" : "Superviseur"}
+          {roleLabel}
         </span>
       </div>
 
@@ -446,11 +432,11 @@ const Sidebar = ({
         <div className="border-t border-white/10 pt-4">
           <div className="flex items-center gap-3 mb-3 px-1">
             <div className="w-8 h-8 rounded-full bg-[#1D4ED8] flex items-center justify-center flex-shrink-0">
-              <span className="text-white text-xs font-bold">SM</span>
+              <span className="text-white text-xs font-bold">{initials}</span>
             </div>
             <div className="flex-1 min-w-0">
-              <div className="text-white text-sm font-semibold truncate">Sophie Martin</div>
-              <div className="text-white/35 text-[11px] truncate">sophie.martin@bt.fr</div>
+              <div className="text-white text-sm font-semibold truncate">{name}</div>
+              <div className="text-white/35 text-[11px] truncate">{user?.email}</div>
             </div>
           </div>
           <button
@@ -1273,79 +1259,131 @@ const FileValidation = () => {
 
 // ─── TABLEAU DES PRIMES ───────────────────────────────────────────────────────
 
-const TableauPrimes = () => {
-  const totals = PRODUCTS.reduce((acc, p) => {
-    acc[p] = AGENT_PRIMES.reduce((s, row) => s + (row[p] || 0), 0);
-    return acc;
-  }, {} as Record<Product, number>);
+const fmtEur = (n: number) =>
+  n.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  const grandTotal = Object.values(totals).reduce((a, b) => a + b, 0);
+const TableauPrimes = () => {
+  const [periode, setPeriode] = useState(() => new Date().toISOString().slice(0, 7));
+  const [rows, setRows] = useState<ApiResult[]>([]);
+  const [hours, setHours] = useState<Record<number, string>>({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [savingId, setSavingId] = useState<number | null>(null);
+
+  const load = async (p: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await listResults(p);
+      setRows(data);
+      setHours(Object.fromEntries(data.map(r => [r.agent.id, String(r.heures || "")])));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur de chargement");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { void load(periode); }, [periode]);
+
+  const saveHours = async (agentId: number) => {
+    setSavingId(agentId);
+    setError(null);
+    try {
+      await saveWorkHours({ agent: agentId, periode, heures: Number(hours[agentId] || 0) });
+      await load(periode);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur d'enregistrement");
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const totalCa = rows.reduce((s, r) => s + r.ca, 0);
+  const totalPrimes = rows.reduce((s, r) => s + r.primes, 0);
+  const totalHeures = rows.reduce((s, r) => s + r.heures, 0);
 
   return (
     <div className="p-8">
       <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <input
-            type="month"
-            defaultValue="2026-06"
-            className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-200"
-          />
-        </div>
-        <div className="flex gap-3">
-          <button className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 bg-white rounded-xl text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors">
-            <Download size={15} />
-            Exporter Excel
-          </button>
-          <button className="flex items-center gap-2 px-4 py-2.5 bg-[#1D4ED8] hover:bg-[#1E40AF] rounded-xl text-sm font-semibold text-white transition-colors">
-            <Download size={15} />
-            Exporter PDF
-          </button>
-        </div>
+        <input
+          type="month"
+          value={periode}
+          onChange={e => setPeriode(e.target.value)}
+          className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-200"
+        />
+        <p className="text-sm text-slate-500">
+          Saisissez les heures travaillées par agent — l'objectif CA/h se calcule automatiquement.
+        </p>
       </div>
+
+      {error && <div className="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-2.5">{error}</div>}
 
       <div className="bg-white rounded-2xl border border-black/[0.06] overflow-hidden">
         <table className="w-full">
           <thead>
             <tr className="bg-[#0F2056] text-white text-sm">
               <th className="text-left px-6 py-4 font-semibold rounded-tl-2xl">Agent</th>
-              {PRODUCTS.map(p => (
-                <th key={p} className="text-center px-5 py-4 font-semibold">{p}</th>
-              ))}
-              <th className="text-right px-6 py-4 font-semibold rounded-tr-2xl">Total</th>
+              <th className="text-center px-5 py-4 font-semibold">Ventes nettes</th>
+              <th className="text-right px-5 py-4 font-semibold">CA (€)</th>
+              <th className="text-right px-5 py-4 font-semibold">Primes (€)</th>
+              <th className="text-center px-5 py-4 font-semibold">Heures</th>
+              <th className="text-right px-6 py-4 font-semibold rounded-tr-2xl">Objectif CA/h</th>
             </tr>
           </thead>
           <tbody>
-            {AGENT_PRIMES.map((row, i) => {
-              const total = PRODUCTS.reduce((s, p) => s + (row[p] || 0), 0);
-              return (
-                <tr
-                  key={row.agent}
-                  className={`border-t border-slate-50 hover:bg-blue-50/30 transition-colors ${i % 2 === 0 ? "" : "bg-slate-50/40"}`}
-                >
-                  <td className="px-6 py-4 text-sm font-bold text-[#0F2056]">{row.agent}</td>
-                  {PRODUCTS.map(p => (
-                    <td key={p} className="px-5 py-4 text-center text-sm font-mono text-slate-700">
-                      {row[p] ? (
-                        <span className="font-semibold text-[#0F2056]">{row[p]} €</span>
-                      ) : (
-                        <span className="text-slate-300">—</span>
-                      )}
-                    </td>
-                  ))}
-                  <td className="px-6 py-4 text-right text-sm font-bold font-mono text-[#1D4ED8]">{total} €</td>
-                </tr>
-              );
-            })}
+            {loading ? (
+              <tr><td colSpan={6} className="px-6 py-8 text-center text-sm text-slate-400">Chargement…</td></tr>
+            ) : rows.length === 0 ? (
+              <tr><td colSpan={6} className="px-6 py-8 text-center text-sm text-slate-400">Aucun agent.</td></tr>
+            ) : rows.map((r, i) => (
+              <tr key={r.agent.id} className={`border-t border-slate-50 hover:bg-blue-50/30 transition-colors ${i % 2 === 0 ? "" : "bg-slate-50/40"}`}>
+                <td className="px-6 py-4 text-sm font-bold text-[#0F2056]">{displayName(r.agent.email)}</td>
+                <td className="px-5 py-4 text-center text-sm font-mono text-slate-700">{r.ventes}</td>
+                <td className="px-5 py-4 text-right text-sm font-mono text-slate-700">{fmtEur(r.ca)} €</td>
+                <td className="px-5 py-4 text-right text-sm font-bold font-mono text-[#1D4ED8]">{fmtEur(r.primes)} €</td>
+                <td className="px-5 py-4">
+                  <div className="flex items-center justify-center gap-2">
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.5"
+                      value={hours[r.agent.id] ?? ""}
+                      onChange={e => setHours(h => ({ ...h, [r.agent.id]: e.target.value }))}
+                      className="w-20 px-2 py-1.5 border border-slate-200 rounded-lg text-sm font-mono text-right focus:outline-none focus:ring-2 focus:ring-blue-200"
+                    />
+                    <button
+                      onClick={() => void saveHours(r.agent.id)}
+                      disabled={savingId === r.agent.id}
+                      className="p-1.5 text-slate-300 hover:text-[#1D4ED8] hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-40"
+                      title="Enregistrer les heures"
+                    >
+                      <Check size={15} />
+                    </button>
+                  </div>
+                </td>
+                <td className="px-6 py-4 text-right text-sm font-bold font-mono text-[#0F2056]">
+                  {r.caParHeure != null ? `${fmtEur(r.caParHeure)} €/h` : <span className="text-slate-300">—</span>}
+                </td>
+              </tr>
+            ))}
           </tbody>
-          <tfoot>
-            <tr className="border-t-2 border-slate-200 bg-slate-50">
-              <td className="px-6 py-4 text-sm font-bold text-[#0F2056]">Total</td>
-              {PRODUCTS.map(p => (
-                <td key={p} className="px-5 py-4 text-center text-sm font-bold font-mono text-[#0F2056]">{totals[p]} €</td>
-              ))}
-              <td className="px-6 py-4 text-right text-sm font-bold font-mono text-[#1D4ED8] text-base">{grandTotal} €</td>
-            </tr>
-          </tfoot>
+          {rows.length > 0 && (
+            <tfoot>
+              <tr className="border-t-2 border-slate-200 bg-slate-50">
+                <td className="px-6 py-4 text-sm font-bold text-[#0F2056]">Total</td>
+                <td className="px-5 py-4 text-center text-sm font-bold font-mono text-[#0F2056]">
+                  {rows.reduce((s, r) => s + r.ventes, 0)}
+                </td>
+                <td className="px-5 py-4 text-right text-sm font-bold font-mono text-[#0F2056]">{fmtEur(totalCa)} €</td>
+                <td className="px-5 py-4 text-right text-sm font-bold font-mono text-[#1D4ED8]">{fmtEur(totalPrimes)} €</td>
+                <td className="px-5 py-4 text-center text-sm font-bold font-mono text-[#0F2056]">{fmtEur(totalHeures)}</td>
+                <td className="px-6 py-4 text-right text-sm font-bold font-mono text-[#0F2056]">
+                  {totalHeures > 0 ? `${fmtEur(totalCa / totalHeures)} €/h` : <span className="text-slate-300">—</span>}
+                </td>
+              </tr>
+            </tfoot>
+          )}
         </table>
       </div>
     </div>
@@ -1355,10 +1393,79 @@ const TableauPrimes = () => {
 // ─── GESTION BARÈMES ──────────────────────────────────────────────────────────
 
 const GestionBaremes = () => {
+  const [baremes, setBaremes] = useState<ApiBareme[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
-  const [newRow, setNewRow]     = useState({ produit: "", offre: "", prime: "", dateEffet: "2026-07-01" });
+  const [busy, setBusy] = useState(false);
+  const [editId, setEditId] = useState<number | null>(null);
+  const [editPrime, setEditPrime] = useState("");
+  const [newRow, setNewRow] = useState({ produit: "", offre: "", prime: "", dateEffet: CHANGE_DATE, dateFin: "" });
 
   const inputCls = "px-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-[#1D4ED8] transition-all";
+
+  const load = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await listBaremes();
+      data.sort((a, b) =>
+        a.produit.localeCompare(b.produit) ||
+        a.offre.localeCompare(b.offre) ||
+        a.dateEffet.localeCompare(b.dateEffet));
+      setBaremes(data);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur de chargement");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { void load(); }, []);
+
+  const save = async () => {
+    if (!newRow.produit || !newRow.offre || !newRow.prime) {
+      setError("Produit, offre et prime sont requis.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await createBareme({
+        produit: newRow.produit,
+        offre: newRow.offre,
+        prime: Number(newRow.prime),
+        dateEffet: newRow.dateEffet,
+        dateFin: newRow.dateFin || null,
+      });
+      setNewRow({ produit: "", offre: "", prime: "", dateEffet: CHANGE_DATE, dateFin: "" });
+      setShowForm(false);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur d'enregistrement");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggleActif = async (b: ApiBareme) => {
+    try {
+      await updateBareme(b.id, { actif: !b.actif });
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur");
+    }
+  };
+
+  const savePrime = async (b: ApiBareme) => {
+    try {
+      await updateBareme(b.id, { prime: Number(editPrime) });
+      setEditId(null);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur");
+    }
+  };
 
   return (
     <div className="p-8">
@@ -1375,10 +1482,12 @@ const GestionBaremes = () => {
         </button>
       </div>
 
+      {error && <div className="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-2.5">{error}</div>}
+
       {showForm && (
         <div className="bg-blue-50/70 border border-blue-200/70 rounded-2xl p-6 mb-6">
           <h3 className="text-sm font-bold text-[#0F2056] mb-4">Nouveau barème</h3>
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-5 gap-4">
             <select
               value={newRow.produit}
               onChange={e => setNewRow(r => ({ ...r, produit: e.target.value, offre: "" }))}
@@ -1408,13 +1517,25 @@ const GestionBaremes = () => {
               value={newRow.dateEffet}
               onChange={e => setNewRow(r => ({ ...r, dateEffet: e.target.value }))}
               className={inputCls}
+              title="Date d'effet"
+            />
+            <input
+              type="date"
+              value={newRow.dateFin}
+              onChange={e => setNewRow(r => ({ ...r, dateFin: e.target.value }))}
+              className={inputCls}
+              title="Date de fin (optionnel)"
             />
           </div>
           <div className="flex justify-end gap-3 mt-4">
             <button onClick={() => setShowForm(false)} className="px-4 py-2 text-sm text-slate-500 hover:text-slate-700 transition-colors">
               Annuler
             </button>
-            <button className="px-5 py-2.5 bg-[#1D4ED8] text-white rounded-xl text-sm font-semibold hover:bg-[#1E40AF] transition-colors">
+            <button
+              onClick={() => void save()}
+              disabled={busy}
+              className="px-5 py-2.5 bg-[#1D4ED8] text-white rounded-xl text-sm font-semibold hover:bg-[#1E40AF] transition-colors disabled:opacity-50"
+            >
               Enregistrer
             </button>
           </div>
@@ -1429,29 +1550,44 @@ const GestionBaremes = () => {
               <th className="text-left px-6 py-4">Offre</th>
               <th className="text-right px-6 py-4">Prime (€)</th>
               <th className="text-left px-6 py-4">Date d'effet</th>
+              <th className="text-left px-6 py-4">Date de fin</th>
               <th className="text-left px-6 py-4">Statut</th>
               <th className="text-right px-6 py-4">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {BAREMES.map(b => (
+            {loading ? (
+              <tr><td colSpan={7} className="px-6 py-8 text-center text-sm text-slate-400">Chargement…</td></tr>
+            ) : baremes.length === 0 ? (
+              <tr><td colSpan={7} className="px-6 py-8 text-center text-sm text-slate-400">Aucun barème.</td></tr>
+            ) : baremes.map(b => (
               <tr
                 key={b.id}
-                className={`border-t border-slate-50 transition-colors ${
-                  !b.actif ? "opacity-45" : "hover:bg-slate-50/60"
-                }`}
+                className={`border-t border-slate-50 transition-colors ${!b.actif ? "opacity-45" : "hover:bg-slate-50/60"}`}
               >
                 <td className="px-6 py-3.5">
                   <span
                     className="text-xs font-bold px-2 py-0.5 rounded-lg text-white"
-                    style={{ backgroundColor: PRODUCT_COLORS[b.produit as Product] }}
+                    style={{ backgroundColor: PRODUCT_COLORS[b.produit as Product] ?? "#64748B" }}
                   >
                     {b.produit}
                   </span>
                 </td>
                 <td className="px-6 py-3.5 text-sm text-slate-700 font-medium">{b.offre}</td>
-                <td className="px-6 py-3.5 text-right text-sm font-bold font-mono text-[#1D4ED8]">{b.prime} €</td>
+                <td className="px-6 py-3.5 text-right text-sm font-bold font-mono text-[#1D4ED8]">
+                  {editId === b.id ? (
+                    <input
+                      type="number"
+                      value={editPrime}
+                      onChange={e => setEditPrime(e.target.value)}
+                      className="w-24 px-2 py-1 border border-slate-200 rounded-lg text-sm font-mono text-right focus:outline-none focus:ring-2 focus:ring-blue-200"
+                    />
+                  ) : (
+                    `${fmtEur(Number(b.prime))} €`
+                  )}
+                </td>
                 <td className="px-6 py-3.5 text-sm font-mono text-slate-400">{b.dateEffet}</td>
+                <td className="px-6 py-3.5 text-sm font-mono text-slate-400">{b.dateFin ?? "—"}</td>
                 <td className="px-6 py-3.5">
                   {b.actif ? (
                     <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">
@@ -1465,11 +1601,33 @@ const GestionBaremes = () => {
                     </span>
                   )}
                 </td>
-                <td className="px-6 py-3.5 text-right">
-                  {b.actif && (
-                    <button className="p-1.5 text-slate-300 hover:text-[#1D4ED8] hover:bg-blue-50 rounded-lg transition-colors">
-                      <Edit2 size={14} />
-                    </button>
+                <td className="px-6 py-3.5 text-right whitespace-nowrap">
+                  {editId === b.id ? (
+                    <>
+                      <button onClick={() => void savePrime(b)} className="p-1.5 text-emerald-500 hover:bg-emerald-50 rounded-lg transition-colors">
+                        <Check size={14} />
+                      </button>
+                      <button onClick={() => setEditId(null)} className="p-1.5 text-slate-300 hover:text-slate-600 hover:bg-slate-50 rounded-lg transition-colors">
+                        <X size={14} />
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => { setEditId(b.id); setEditPrime(String(Number(b.prime))); }}
+                        className="p-1.5 text-slate-300 hover:text-[#1D4ED8] hover:bg-blue-50 rounded-lg transition-colors"
+                        title="Modifier la prime"
+                      >
+                        <Edit2 size={14} />
+                      </button>
+                      <button
+                        onClick={() => void toggleActif(b)}
+                        className="px-2 py-1 text-xs font-semibold text-slate-400 hover:text-[#1D4ED8] rounded-lg transition-colors"
+                        title={b.actif ? "Archiver" : "Réactiver"}
+                      >
+                        {b.actif ? "Archiver" : "Réactiver"}
+                      </button>
+                    </>
                   )}
                 </td>
               </tr>
@@ -1516,7 +1674,9 @@ const Root = () => {
 
 const Dashboard = () => {
   const { user, logout } = useAuth();
-  const role: Role = user?.roles.includes("ROLE_SUPERVISEUR") ? "superviseur" : "agent";
+  const isChef = user?.roles.includes("ROLE_CHEF_PLATEAU") ?? false;
+  const role: Role = (user?.roles.includes("ROLE_SUPERVISEUR") || isChef) ? "superviseur" : "agent";
+  const roleLabel = role === "agent" ? "Agent Commercial" : isChef ? "Chef de plateau" : "Superviseur";
   const [view, setView] = useState<View>(role === "agent" ? "agent-dashboard" : "sup-dashboard");
 
   const META: Record<View, { title: string; sub: string }> = {
@@ -1526,7 +1686,7 @@ const Dashboard = () => {
     "agent-mes-ventes":   { title: "Mes ventes",          sub: "Historique complet de vos ventes saisies" },
     "sup-dashboard":      { title: "Tableau de bord",     sub: "Vue d'ensemble équipe — Juin 2026" },
     "sup-validation":     { title: "File de validation",  sub: "Ventes en attente de traitement" },
-    "sup-primes":         { title: "Tableau des primes",  sub: "Récapitulatif mensuel par agent et produit" },
+    "sup-primes":         { title: "Résultats & primes",   sub: "CA, primes, heures travaillées et objectif CA/h par agent" },
     "sup-baremes":        { title: "Gestion des barèmes", sub: "Tarification des primes — historique et édition" },
   };
 
@@ -1547,7 +1707,7 @@ const Dashboard = () => {
 
   return (
     <div className="min-h-screen bg-[#F1F5F9]" style={{ fontFamily: "'Inter', sans-serif" }}>
-      <Sidebar role={role} view={view} onNavigate={setView} onLogout={() => { void logout(); }} />
+      <Sidebar role={role} roleLabel={roleLabel} view={view} onNavigate={setView} onLogout={() => { void logout(); }} />
       <div className="ml-60">
         <Header title={title} subtitle={sub} />
         <main className="pt-[60px] min-h-screen">

@@ -49,10 +49,13 @@ class SecurityController extends AbstractController
             return null;
         }
 
+        $manager = $user->getManager();
+
         return [
             'id' => $user->getId(),
             'email' => $user->getEmail(),
             'roles' => $user->getRoles(),
+            'manager' => $manager ? ['id' => $manager->getId(), 'email' => $manager->getEmail()] : null,
         ];
     }
 }

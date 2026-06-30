@@ -6,6 +6,7 @@ use App\Entity\Sale;
 use App\Entity\User;
 use App\Repository\SaleRepository;
 use App\Repository\UserRepository;
+use App\Service\PrimeCalculator;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -20,6 +21,7 @@ class SaleController extends AbstractController
         private readonly SaleRepository $sales,
         private readonly UserRepository $users,
         private readonly EntityManagerInterface $em,
+        private readonly PrimeCalculator $primeCalculator,
     ) {
     }
 
@@ -58,6 +60,7 @@ class SaleController extends AbstractController
             return $this->json(['errors' => $errors], Response::HTTP_BAD_REQUEST);
         }
 
+        $this->primeCalculator->apply($sale);
         $this->em->persist($sale);
         $this->em->flush();
 
@@ -82,6 +85,7 @@ class SaleController extends AbstractController
             return $this->json(['errors' => $errors], Response::HTTP_BAD_REQUEST);
         }
 
+        $this->primeCalculator->apply($sale);
         $this->em->flush();
 
         return $this->json($this->serialize($sale));
@@ -234,6 +238,7 @@ class SaleController extends AbstractController
             'valideParId' => $valePar ? ['id' => $valePar->getId(), 'email' => $valePar->getEmail()] : null,
             'dateValidation' => $sale->getDateValidation()?->format(\DateTimeInterface::ATOM),
             'createdAt' => $sale->getCreatedAt()?->format(\DateTimeInterface::ATOM),
+            'prime' => $sale->getPrime(),
         ];
     }
 

@@ -39,6 +39,47 @@ class UserController extends AbstractController
         return $this->json($this->serialize($user));
     }
 
+    #[Route('/{id}', name: 'user_update', methods: ['PUT', 'PATCH'], requirements: ['id' => '\d+'])]
+    public function update(int $id, Request $request): JsonResponse
+    {
+        if (!$this->isGranted('ROLE_CHEF_PLATEAU')) {
+            return $this->json(['error' => 'Forbidden'], Response::HTTP_FORBIDDEN);
+        }
+
+        $user = $this->users->find($id);
+        if (!$user instanceof User) {
+            return $this->json(['error' => 'User not found'], Response::HTTP_NOT_FOUND);
+        }
+
+        $data = json_decode($request->getContent(), true);
+        if (!is_array($data)) {
+            return $this->json(['error' => 'Invalid JSON body'], Response::HTTP_BAD_REQUEST);
+        }
+
+        if (array_key_exists('roles', $data)) {
+            if (!is_array($data['roles'])) {
+                return $this->json(['errors' => ['roles: expected an array']], Response::HTTP_BAD_REQUEST);
+            }
+            $user->setRoles(array_values(array_filter($data['roles'], 'is_string')));
+        }
+
+        if (array_key_exists('manager', $data)) {
+            if (null === $data['manager']) {
+                $user->setManager(null);
+            } else {
+                $manager = $this->users->find((int) $data['manager']);
+                if (!$manager instanceof User) {
+                    return $this->json(['errors' => ['manager: unknown user id']], Response::HTTP_BAD_REQUEST);
+                }
+                $user->setManager($manager);
+            }
+        }
+
+        $this->em->flush();
+
+        return $this->json($this->serialize($user));
+    }
+
     #[Route('', name: 'user_create', methods: ['POST'])]
     public function create(Request $request): JsonResponse
     {
@@ -80,10 +121,13 @@ class UserController extends AbstractController
      */
     private function serialize(User $user): array
     {
+        $manager = $user->getManager();
+
         return [
             'id' => $user->getId(),
             'email' => $user->getEmail(),
             'roles' => $user->getRoles(),
+            'manager' => $manager ? ['id' => $manager->getId(), 'email' => $manager->getEmail()] : null,
         ];
     }
 }

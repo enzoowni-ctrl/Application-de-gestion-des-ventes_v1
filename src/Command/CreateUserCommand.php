@@ -30,7 +30,8 @@ class CreateUserCommand extends Command
         $this
             ->addArgument('email', InputArgument::REQUIRED, 'User email')
             ->addArgument('password', InputArgument::REQUIRED, 'Plain password')
-            ->addOption('role', null, InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, 'Role(s) to grant', []);
+            ->addOption('role', null, InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, 'Role(s) to grant', [])
+            ->addOption('manager', null, InputOption::VALUE_REQUIRED, 'Email of the supervisor this user reports to');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -45,6 +46,17 @@ class CreateUserCommand extends Command
         $user->setEmail($email);
         $user->setRoles($roles);
         $user->setPassword($this->hasher->hashPassword($user, $password));
+
+        $managerEmail = $input->getOption('manager');
+        if (is_string($managerEmail) && '' !== $managerEmail) {
+            $manager = $this->users->findOneBy(['email' => $managerEmail]);
+            if (!$manager instanceof User) {
+                $io->error(sprintf('Manager "%s" not found. Create it first.', $managerEmail));
+
+                return Command::FAILURE;
+            }
+            $user->setManager($manager);
+        }
 
         $this->em->persist($user);
         $this->em->flush();

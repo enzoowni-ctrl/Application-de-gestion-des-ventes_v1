@@ -40,9 +40,22 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     #[ORM\OneToMany(targetEntity: Sale::class, mappedBy: 'agent')]
     private Collection $sales;
 
+    /**
+     * The supervisor this agent reports to (null for supervisors / chef de plateau).
+     */
+    #[ORM\ManyToOne(targetEntity: self::class, inversedBy: 'agents')]
+    private ?self $manager = null;
+
+    /**
+     * @var Collection<int, User>
+     */
+    #[ORM\OneToMany(targetEntity: self::class, mappedBy: 'manager')]
+    private Collection $agents;
+
     public function __construct()
     {
         $this->sales = new ArrayCollection();
+        $this->agents = new ArrayCollection();
     }
 
     public function getId(): ?int
@@ -144,6 +157,47 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
             // set the owning side to null (unless already changed)
             if ($sale->getAgent() === $this) {
                 $sale->setAgent(null);
+            }
+        }
+
+        return $this;
+    }
+
+    public function getManager(): ?self
+    {
+        return $this->manager;
+    }
+
+    public function setManager(?self $manager): static
+    {
+        $this->manager = $manager;
+
+        return $this;
+    }
+
+    /**
+     * @return Collection<int, User>
+     */
+    public function getAgents(): Collection
+    {
+        return $this->agents;
+    }
+
+    public function addAgent(self $agent): static
+    {
+        if (!$this->agents->contains($agent)) {
+            $this->agents->add($agent);
+            $agent->setManager($this);
+        }
+
+        return $this;
+    }
+
+    public function removeAgent(self $agent): static
+    {
+        if ($this->agents->removeElement($agent)) {
+            if ($agent->getManager() === $this) {
+                $agent->setManager(null);
             }
         }
 
