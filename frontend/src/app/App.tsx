@@ -1299,9 +1299,15 @@ const TableauPrimes = () => {
     }
   };
 
+  const enteredHeures = (agentId: number) => Number(hours[agentId] || 0);
+  const objectif = (r: ApiResult) => {
+    const h = enteredHeures(r.agent.id);
+    return h > 0 ? r.ca / h : null;
+  };
+
   const totalCa = rows.reduce((s, r) => s + r.ca, 0);
   const totalPrimes = rows.reduce((s, r) => s + r.primes, 0);
-  const totalHeures = rows.reduce((s, r) => s + r.heures, 0);
+  const totalHeures = rows.reduce((s, r) => s + enteredHeures(r.agent.id), 0);
 
   return (
     <div className="p-8">
@@ -1350,12 +1356,17 @@ const TableauPrimes = () => {
                       step="0.5"
                       value={hours[r.agent.id] ?? ""}
                       onChange={e => setHours(h => ({ ...h, [r.agent.id]: e.target.value }))}
+                      onKeyDown={e => { if (e.key === "Enter") void saveHours(r.agent.id); }}
                       className="w-20 px-2 py-1.5 border border-slate-200 rounded-lg text-sm font-mono text-right focus:outline-none focus:ring-2 focus:ring-blue-200"
                     />
                     <button
                       onClick={() => void saveHours(r.agent.id)}
                       disabled={savingId === r.agent.id}
-                      className="p-1.5 text-slate-300 hover:text-[#1D4ED8] hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-40"
+                      className={`p-1.5 rounded-lg transition-colors disabled:opacity-40 ${
+                        enteredHeures(r.agent.id) !== r.heures
+                          ? "text-white bg-amber-500 hover:bg-amber-600"
+                          : "text-emerald-500 hover:bg-emerald-50"
+                      }`}
                       title="Enregistrer les heures"
                     >
                       <Check size={15} />
@@ -1363,7 +1374,7 @@ const TableauPrimes = () => {
                   </div>
                 </td>
                 <td className="px-6 py-4 text-right text-sm font-bold font-mono text-[#0F2056]">
-                  {r.caParHeure != null ? `${fmtEur(r.caParHeure)} €/h` : <span className="text-slate-300">—</span>}
+                  {objectif(r) != null ? `${fmtEur(objectif(r)!)} €/h` : <span className="text-slate-300">—</span>}
                 </td>
               </tr>
             ))}
