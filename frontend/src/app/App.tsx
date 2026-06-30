@@ -1,4 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect, createContext, useContext } from "react";
+import type { ReactNode } from "react";
+import {
+  listSales, listUsers, createUser, createSale, updateSale,
+  displayName, type ApiSale,
+} from "./api";
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -102,6 +107,175 @@ const BAREMES = [
   { id:15, produit:"FSM",   offre:"FSM Plus",         prime:15, dateEffet:"2026-01-01", actif:true  },
 ];
 
+// ─── Sales data (API-backed) ──────────────────────────────────────────────────
+
+export interface Sale {
+  id: number;
+  date: string;
+  type: string;
+  offre: string;
+  numCommande: string;
+  numBascule: string;
+  domaine: string;
+  porta: boolean;
+  pto: boolean;
+  convergence: boolean;
+  valeur: number;
+  pointVente: string;
+  statut: Status;
+  prime: number;
+  agent: string;
+  agentId: number | null;
+}
+
+export interface NewSaleInput {
+  date: string;
+  type: string;
+  offre: string;
+  numCommande: string;
+  numBascule: string;
+  domaine: string;
+  porta: boolean;
+  pto: boolean;
+  convergence: boolean;
+  valeur: number;
+  pointVente: string;
+}
+
+const computePrime = (type: string, offre: string): number => {
+  const b = BAREMES.find(x => x.actif && x.produit === type && x.offre === offre);
+  return b ? b.prime : 0;
+};
+
+const fromApi = (s: ApiSale): Sale => ({
+  id: s.id,
+  date: (s.date ?? "").slice(0, 10),
+  type: s.type,
+  offre: s.offre,
+  numCommande: s.nCommande,
+  numBascule: s.bascule ?? "",
+  domaine: s.domaine,
+  porta: s.porta,
+  pto: s.pto,
+  convergence: s.convergence,
+  valeur: Number(s.valeur),
+  pointVente: s.pointDeVente ?? "",
+  statut: s.statut as Status,
+  prime: computePrime(s.type, s.offre),
+  agent: displayName(s.agent?.email),
+  agentId: s.agent?.id ?? null,
+});
+
+interface SalesContextValue {
+  sales: Sale[];
+  loading: boolean;
+  error: string | null;
+  currentAgentId: number | null;
+  reload: () => Promise<void>;
+  addSale: (input: NewSaleInput) => Promise<void>;
+  validateSale: (id: number) => Promise<void>;
+  rejectSale: (id: number, motif: string) => Promise<void>;
+}
+
+const SalesContext = createContext<SalesContextValue | null>(null);
+
+const useSales = (): SalesContextValue => {
+  const ctx = useContext(SalesContext);
+  if (!ctx) throw new Error("useSales must be used within SalesProvider");
+  return ctx;
+};
+
+const SalesProvider = ({ children }: { children: ReactNode }) => {
+  const [sales, setSales] = useState<Sale[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [currentAgentId, setCurrentAgentId] = useState<number | null>(null);
+
+  const reload = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      let users = await listUsers();
+      if (users.length === 0) {
+        const u = await createUser({
+          email: "agent@bouyguestelecom.fr",
+          password: "password",
+          roles: ["ROLE_USER"],
+        });
+        users = [u];
+      }
+      setCurrentAgentId(users[0].id);
+      const data = await listSales();
+      setSales(data.map(fromApi));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur de chargement");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    reload();
+  }, []);
+
+  const upsert = (s: ApiSale) =>
+    setSales(prev => {
+      const mapped = fromApi(s);
+      const i = prev.findIndex(x => x.id === mapped.id);
+      if (i === -1) return [mapped, ...prev];
+      const next = [...prev];
+      next[i] = mapped;
+      return next;
+    });
+
+  const addSale = async (input: NewSaleInput) => {
+    if (currentAgentId == null) throw new Error("Aucun agent disponible");
+    const created = await createSale({
+      agent: currentAgentId,
+      date: input.date,
+      nCommande: input.numCommande,
+      bascule: input.numBascule || null,
+      domaine: input.domaine,
+      type: input.type,
+      offre: input.offre,
+      porta: input.porta,
+      pto: input.pto,
+      convergence: input.convergence,
+      pointDeVente: input.pointVente || null,
+      valeur: input.valeur,
+      statut: "Brute",
+    });
+    upsert(created);
+  };
+
+  const validateSale = async (id: number) => {
+    const updated = await updateSale(id, {
+      statut: "Nette",
+      valideParId: currentAgentId,
+      dateValidation: new Date().toISOString(),
+    });
+    upsert(updated);
+  };
+
+  const rejectSale = async (id: number, motif: string) => {
+    const updated = await updateSale(id, {
+      statut: "Rejetée",
+      motifRejet: motif,
+      valideParId: currentAgentId,
+      dateValidation: new Date().toISOString(),
+    });
+    upsert(updated);
+  };
+
+  return (
+    <SalesContext.Provider
+      value={{ sales, loading, error, currentAgentId, reload, addSale, validateSale, rejectSale }}
+    >
+      {children}
+    </SalesContext.Provider>
+  );
+};
+
 // ─── Shared Components ────────────────────────────────────────────────────────
 
 const StatusBadge = ({ status }: { status: Status }) => {
@@ -160,7 +334,8 @@ const Sidebar = ({
 }: {
   role: Role; view: View; onNavigate: (v: View) => void; onLogout: () => void;
 }) => {
-  const pendingCount = ALL_SALES.filter(s => s.statut === "Brute").length;
+  const { sales } = useSales();
+  const pendingCount = sales.filter(s => s.statut === "Brute").length;
 
   const agentNav = [
     { view: "agent-dashboard" as View,       icon: LayoutDashboard, label: "Tableau de bord" },
@@ -376,7 +551,9 @@ const LoginScreen = ({ onLogin }: { onLogin: (r: Role) => void }) => {
 
 // ─── AGENT DASHBOARD ──────────────────────────────────────────────────────────
 
-const AgentDashboard = () => (
+const AgentDashboard = () => {
+  const { sales } = useSales();
+  return (
   <div className="p-8 space-y-7">
     <div className="grid grid-cols-4 gap-5">
       <StatCard icon={ShoppingCart} label="Ventes du mois"  value="23"      sub="Juin 2026"      accent="bg-[#1D4ED8]"  />
@@ -450,7 +627,7 @@ const AgentDashboard = () => (
           </tr>
         </thead>
         <tbody>
-          {ALL_SALES.slice(0, 5).map(s => (
+          {sales.slice(0, 5).map(s => (
             <tr key={s.id} className="border-t border-slate-50 hover:bg-slate-50/60 transition-colors">
               <td className="px-6 py-3.5 text-sm font-mono text-slate-500">{s.date}</td>
               <td className="px-6 py-3.5">
@@ -468,20 +645,64 @@ const AgentDashboard = () => (
       </table>
     </div>
   </div>
-);
+  );
+};
 
 // ─── NOUVELLE VENTE ───────────────────────────────────────────────────────────
 
 const NouvelleVente = () => {
+  const { addSale } = useSales();
+  const [date, setDate]       = useState("2026-06-30");
+  const [pointVente, setPointVente] = useState("");
   const [produit, setProduit] = useState<Product | "">("");
   const [offre, setOffre]     = useState("");
+  const [numCommande, setNumCommande] = useState("");
+  const [numBascule, setNumBascule]   = useState("");
+  const [domaine, setDomaine] = useState("FAI");
+  const [valeur, setValeur]   = useState("");
   const [porta, setPorta]     = useState(false);
   const [pto, setPto]         = useState(false);
   const [conv, setConv]       = useState(false);
   const [done, setDone]       = useState(false);
+  const [saving, setSaving]   = useState(false);
+  const [error, setError]     = useState<string | null>(null);
 
   const inputCls = "w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-[#1D4ED8] transition-all";
   const labelCls = "block text-sm font-semibold text-slate-700 mb-1.5";
+
+  const reset = () => {
+    setDone(false); setProduit(""); setOffre(""); setPorta(false); setPto(false); setConv(false);
+    setNumCommande(""); setNumBascule(""); setPointVente(""); setValeur(""); setDomaine("FAI"); setError(null);
+  };
+
+  const submit = async () => {
+    setError(null);
+    if (!produit || !offre || !numCommande || !date || valeur === "") {
+      setError("Merci de remplir les champs obligatoires (date, produit, offre, n° commande, valeur).");
+      return;
+    }
+    setSaving(true);
+    try {
+      await addSale({
+        date,
+        type: produit,
+        offre,
+        numCommande,
+        numBascule,
+        domaine,
+        porta,
+        pto,
+        convergence: conv,
+        valeur: Number(valeur),
+        pointVente,
+      });
+      setDone(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur lors de l'enregistrement");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   if (done) {
     return (
@@ -493,7 +714,7 @@ const NouvelleVente = () => {
           <h2 className="text-xl font-bold text-[#0F2056] mb-2">Vente envoyée pour validation</h2>
           <p className="text-slate-500 text-sm mb-6">Elle apparaîtra dans votre liste sous le statut <strong>Brute</strong>.</p>
           <button
-            onClick={() => { setDone(false); setProduit(""); setOffre(""); setPorta(false); setPto(false); setConv(false); }}
+            onClick={reset}
             className="bg-[#1D4ED8] text-white px-6 py-2.5 rounded-xl text-sm font-semibold hover:bg-[#1E40AF] transition-colors"
           >
             Saisir une nouvelle vente
@@ -514,11 +735,11 @@ const NouvelleVente = () => {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className={labelCls}>Date de la vente *</label>
-                <input type="date" defaultValue="2026-06-30" className={inputCls} />
+                <input type="date" value={date} onChange={e => setDate(e.target.value)} className={inputCls} />
               </div>
               <div>
                 <label className={labelCls}>Point de vente</label>
-                <input type="text" placeholder="ex: Paris 11e" className={inputCls} />
+                <input type="text" value={pointVente} onChange={e => setPointVente(e.target.value)} placeholder="ex: Paris 11e" className={inputCls} />
               </div>
             </div>
 
@@ -553,11 +774,11 @@ const NouvelleVente = () => {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className={labelCls}>N° de commande *</label>
-                <input type="text" placeholder="CMD-2026-XXXX" className={inputCls + " font-mono"} />
+                <input type="text" value={numCommande} onChange={e => setNumCommande(e.target.value)} placeholder="CMD-2026-XXXX" className={inputCls + " font-mono"} />
               </div>
               <div>
-                <label className={labelCls}>N° bascule *</label>
-                <input type="text" placeholder="BAS-XXXX" className={inputCls + " font-mono"} />
+                <label className={labelCls}>N° bascule</label>
+                <input type="text" value={numBascule} onChange={e => setNumBascule(e.target.value)} placeholder="BAS-XXXX" className={inputCls + " font-mono"} />
               </div>
             </div>
 
@@ -565,14 +786,14 @@ const NouvelleVente = () => {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className={labelCls}>Domaine *</label>
-                <select className={inputCls + " cursor-pointer"}>
+                <select value={domaine} onChange={e => setDomaine(e.target.value)} className={inputCls + " cursor-pointer"}>
                   <option>FAI</option>
                   <option>Mobile</option>
                 </select>
               </div>
               <div>
                 <label className={labelCls}>Valeur (€) *</label>
-                <input type="number" placeholder="0.00" step="0.01" min="0" className={inputCls + " font-mono"} />
+                <input type="number" value={valeur} onChange={e => setValeur(e.target.value)} placeholder="0.00" step="0.01" min="0" className={inputCls + " font-mono"} />
               </div>
             </div>
 
@@ -584,11 +805,16 @@ const NouvelleVente = () => {
               <Toggle label="Convergence (Fixe + Mobile)" value={conv} onChange={setConv} />
             </div>
 
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl px-4 py-3">{error}</div>
+            )}
+
             <button
-              onClick={() => setDone(true)}
-              className="w-full bg-[#1D4ED8] hover:bg-[#1E40AF] text-white py-3 rounded-xl font-semibold text-sm transition-colors shadow-md shadow-blue-100"
+              onClick={submit}
+              disabled={saving}
+              className="w-full bg-[#1D4ED8] hover:bg-[#1E40AF] text-white py-3 rounded-xl font-semibold text-sm transition-colors shadow-md shadow-blue-100 disabled:opacity-50"
             >
-              Envoyer pour validation
+              {saving ? "Envoi..." : "Envoyer pour validation"}
             </button>
           </div>
         </div>
@@ -603,7 +829,9 @@ const MesVentes = () => {
   const [filterStatus, setFilterStatus] = useState<"Tous" | Status>("Tous");
   const [search, setSearch] = useState("");
 
-  const filtered = ALL_SALES.filter(s => {
+  const { sales } = useSales();
+
+  const filtered = sales.filter(s => {
     if (filterStatus !== "Tous" && s.statut !== filterStatus) return false;
     if (search) {
       const q = search.toLowerCase();
@@ -708,7 +936,8 @@ const MesVentes = () => {
 // ─── SUPERVISEUR DASHBOARD ────────────────────────────────────────────────────
 
 const SupDashboard = () => {
-  const pending = ALL_SALES.filter(s => s.statut === "Brute").length;
+  const { sales } = useSales();
+  const pending = sales.filter(s => s.statut === "Brute").length;
   const sorted  = [...AGENT_PRIMES].sort((a, b) => {
     const ta = PRODUCTS.reduce((s, p) => s + (a[p] || 0), 0);
     const tb = PRODUCTS.reduce((s, p) => s + (b[p] || 0), 0);
@@ -806,19 +1035,28 @@ const SupDashboard = () => {
 // ─── FILE DE VALIDATION ───────────────────────────────────────────────────────
 
 const FileValidation = () => {
-  const [sales, setSales]       = useState(ALL_SALES.filter(s => s.statut === "Brute"));
+  const { sales: allSales, validateSale, rejectSale: rejectSaleApi } = useSales();
+  const sales = allSales.filter(s => s.statut === "Brute");
   const [expanded, setExpanded] = useState<number | null>(null);
   const [rejectId, setRejectId] = useState<number | null>(null);
   const [motif, setMotif]       = useState("");
+  const [busy, setBusy]         = useState(false);
 
-  const validate = (id: number) => setSales(prev => prev.filter(s => s.id !== id));
-  const confirmReject = () => {
-    setSales(prev => prev.filter(s => s.id !== rejectId));
-    setRejectId(null);
-    setMotif("");
+  const validate = async (id: number) => {
+    setBusy(true);
+    try { await validateSale(id); } finally { setBusy(false); }
+  };
+  const confirmReject = async () => {
+    if (rejectId == null) return;
+    setBusy(true);
+    try {
+      await rejectSaleApi(rejectId, motif);
+      setRejectId(null);
+      setMotif("");
+    } finally { setBusy(false); }
   };
 
-  const rejectSale = rejectId != null ? ALL_SALES.find(s => s.id === rejectId) : null;
+  const rejectSale = rejectId != null ? allSales.find(s => s.id === rejectId) : null;
 
   return (
     <div className="p-8">
@@ -1217,14 +1455,16 @@ export default function App() {
   const { title, sub } = META[view];
 
   return (
-    <div className="min-h-screen bg-[#F1F5F9]" style={{ fontFamily: "'Inter', sans-serif" }}>
-      <Sidebar role={role} view={view} onNavigate={setView} onLogout={() => setView("login")} />
-      <div className="ml-60">
-        <Header title={title} subtitle={sub} />
-        <main className="pt-[60px] min-h-screen">
-          {renderView()}
-        </main>
+    <SalesProvider>
+      <div className="min-h-screen bg-[#F1F5F9]" style={{ fontFamily: "'Inter', sans-serif" }}>
+        <Sidebar role={role} view={view} onNavigate={setView} onLogout={() => setView("login")} />
+        <div className="ml-60">
+          <Header title={title} subtitle={sub} />
+          <main className="pt-[60px] min-h-screen">
+            {renderView()}
+          </main>
+        </div>
       </div>
-    </div>
+    </SalesProvider>
   );
 }
