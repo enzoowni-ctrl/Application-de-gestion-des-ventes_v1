@@ -1,0 +1,50 @@
+{% extends 'base.html.twig' %}
+{% set active = 'validation' %}
+
+{% block title %}File de validation · GestPrimes{% endblock %}
+{% block heading %}File de validation{% endblock %}
+{% block subtitle %}Ventes en attente ({{ sales|length }}){% endblock %}
+
+{% block body %}
+<div class="table-wrap">
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Agent</th>
+                <th>N° commande</th>
+                <th>Type</th>
+                <th>Offre</th>
+                <th class="num">Valeur</th>
+                <th class="num">Prime</th>
+                <th class="actions-col">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for s in sales %}
+                <tr>
+                    <td>{{ s.date ? s.date|date('d/m/Y') : '—' }}</td>
+                    <td>{{ s.agent ? s.agent.email|display_name : '—' }}</td>
+                    <td class="mono">{{ s.nCommande }}</td>
+                    <td>{{ s.type }}</td>
+                    <td>{{ s.offre }}</td>
+                    <td class="num mono">{{ s.valeur|eur }} €</td>
+                    <td class="num mono accent">{{ s.prime is not null ? s.prime|eur ~ ' €' : '—' }}</td>
+                    <td class="actions-col">
+                        <form method="post" action="{{ path('app_sale_validate', {id: s.id}) }}" class="inline">
+                            <input type="hidden" name="_token" value="{{ csrf_token('sale_decide' ~ s.id) }}">
+                            <button type="submit" class="btn btn-sm btn-success">Valider</button>
+                        </form>
+                        <form method="post" action="{{ path('app_sale_reject', {id: s.id}) }}" class="inline" onsubmit="return confirm('Rejeter cette vente ?');">
+                            <input type="hidden" name="_token" value="{{ csrf_token('sale_decide' ~ s.id) }}">
+                            <button type="submit" class="btn btn-sm btn-danger">Rejeter</button>
+                        </form>
+                    </td>
+                </tr>
+            {% else %}
+                <tr><td colspan="8" class="empty">Aucune vente en attente.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

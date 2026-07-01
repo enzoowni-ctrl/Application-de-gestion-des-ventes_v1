@@ -32,4 +32,25 @@ class UserRepository extends ServiceEntityRepository implements PasswordUpgrader
         $this->getEntityManager()->persist($user);
         $this->getEntityManager()->flush();
     }
+
+    /**
+     * Returns the agents the given user is allowed to see results for:
+     * - chef de plateau: everyone;
+     * - superviseur: the agents who report to them;
+     * - agent: only themselves.
+     *
+     * @return list<User>
+     */
+    public function findAccessibleAgents(User $current): array
+    {
+        if (in_array('ROLE_CHEF_PLATEAU', $current->getRoles(), true)) {
+            return $this->findBy([], ['email' => 'ASC']);
+        }
+
+        if (in_array('ROLE_SUPERVISEUR', $current->getRoles(), true)) {
+            return $this->findBy(['manager' => $current], ['email' => 'ASC']);
+        }
+
+        return [$current];
+    }
 }

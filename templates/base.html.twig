@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}GestPrimes{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ asset('assets/app.css') }}">
+</head>
+<body>
+{% if app.user %}
+    {% set is_chef = is_granted('ROLE_CHEF_PLATEAU') %}
+    {% set is_sup = is_granted('ROLE_SUPERVISEUR') %}
+    {% set role_label = is_chef ? 'Chef de plateau' : (is_sup ? 'Superviseur' : 'Agent Commercial') %}
+    <div class="layout">
+        <aside class="sidebar">
+            <div class="brand">
+                <div class="brand-logo">BT</div>
+                <div>
+                    <div class="brand-name">GestPrimes</div>
+                    <div class="brand-sub">Bouygues Telecom</div>
+                </div>
+            </div>
+            <div class="role-label">{{ role_label }}</div>
+            <nav class="nav">
+                <a href="{{ path('app_dashboard') }}" class="nav-item {{ active == 'dashboard' ? 'is-active' }}">Tableau de bord</a>
+                {% if is_sup %}
+                    <a href="{{ path('app_validation') }}" class="nav-item {{ active == 'validation' ? 'is-active' }}">File de validation</a>
+                {% endif %}
+                <a href="{{ path('app_sales') }}" class="nav-item {{ active == 'sales' ? 'is-active' }}">{{ is_sup ? 'Ventes' : 'Mes ventes' }}</a>
+                {% if not is_sup %}
+                    <a href="{{ path('app_sale_new') }}" class="nav-item {{ active == 'sale_new' ? 'is-active' }}">Nouvelle vente</a>
+                {% endif %}
+                <a href="{{ path('app_results') }}" class="nav-item {{ active == 'results' ? 'is-active' }}">Résultats &amp; primes</a>
+                <a href="{{ path('app_baremes') }}" class="nav-item {{ active == 'baremes' ? 'is-active' }}">Gestion barèmes</a>
+            </nav>
+            <div class="user-box">
+                <div class="user-avatar">{{ app.user.email|display_name|split(' ')|map(p => p|first)|join|slice(0, 2)|upper }}</div>
+                <div class="user-meta">
+                    <div class="user-name">{{ app.user.email|display_name }}</div>
+                    <div class="user-email">{{ app.user.email }}</div>
+                </div>
+            </div>
+            <a href="{{ path('app_logout') }}" class="logout">Déconnexion</a>
+        </aside>
+        <div class="content">
+            <header class="topbar">
+                <div>
+                    <h1>{% block heading %}{% endblock %}</h1>
+                    <p class="subtitle">{% block subtitle %}{% endblock %}</p>
+                </div>
+            </header>
+            <main class="main">
+                {% for label, messages in app.flashes %}
+                    {% for message in messages %}
+                        <div class="flash flash-{{ label }}">{{ message }}</div>
+                    {% endfor %}
+                {% endfor %}
+                {% block body %}{% endblock %}
+            </main>
+        </div>
+    </div>
+{% else %}
+    {% block guest %}{% endblock %}
+{% endif %}
+<script src="{{ asset('assets/app.js') }}"></script>
+</body>
+</html>

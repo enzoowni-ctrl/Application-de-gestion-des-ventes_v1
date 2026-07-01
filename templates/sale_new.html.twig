@@ -1,0 +1,58 @@
+{% extends 'base.html.twig' %}
+{% set active = 'sale_new' %}
+
+{% block title %}Nouvelle vente · GestPrimes{% endblock %}
+{% block heading %}Nouvelle vente{% endblock %}
+{% block subtitle %}La prime est calculée automatiquement selon le barème à la date de la vente{% endblock %}
+
+{% block body %}
+<form method="post" class="panel form-grid" id="sale-form" data-offers="{{ offers|json_encode|e('html_attr') }}">
+    <label class="field">
+        <span>Date</span>
+        <input type="date" name="date" value="{{ today }}" required>
+    </label>
+    <label class="field">
+        <span>N° commande</span>
+        <input type="text" name="nCommande" required placeholder="612213534">
+    </label>
+    <label class="field">
+        <span>Bascule</span>
+        <input type="text" name="bascule" placeholder="813688713">
+    </label>
+    <label class="field">
+        <span>Domaine</span>
+        <select name="domaine" required>
+            <option value="FAI">FAI</option>
+            <option value="Mobile">Mobile</option>
+        </select>
+    </label>
+    <label class="field">
+        <span>Type produit</span>
+        <select name="type" id="type-select" required>
+            {% for product in offers|keys %}<option value="{{ product }}">{{ product }}</option>{% endfor %}
+        </select>
+    </label>
+    <label class="field">
+        <span>Offre</span>
+        <select name="offre" id="offre-select" required></select>
+    </label>
+    <label class="field">
+        <span>Valeur (€)</span>
+        <input type="number" name="valeur" step="0.01" min="0" required placeholder="39.99">
+    </label>
+    <label class="field">
+        <span>Point de vente</span>
+        <input type="text" name="pointDeVente" placeholder="Paris 11e">
+    </label>
+    <div class="field checks">
+        <label class="check"><input type="checkbox" name="porta" value="1"> PORTA</label>
+        <label class="check"><input type="checkbox" name="pto" value="1"> PTO</label>
+        <label class="check"><input type="checkbox" name="convergence" value="1"> Convergence</label>
+    </div>
+    <input type="hidden" name="_token" value="{{ csrf_token('sale_new') }}">
+    <div class="form-actions">
+        <a href="{{ path('app_sales') }}" class="btn">Annuler</a>
+        <button type="submit" class="btn btn-primary">Enregistrer la vente</button>
+    </div>
+</form>
+{% endblock %}
