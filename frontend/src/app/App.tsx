@@ -5,7 +5,8 @@ import {
   login as apiLogin, logout as apiLogout, me as apiMe,
   listBaremes, createBareme, updateBareme,
   listResults, saveWorkHours,
-  displayName, type ApiSale, type ApiUser, type ApiBareme, type ApiResult,
+  listMyTeam, createAgent, deleteAgent,
+  displayName, type ApiSale, type ApiUser, type ApiBareme, type ApiResult, type ApiAgent,
 } from "./api";
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
@@ -31,7 +32,8 @@ type View =
   | "sup-dashboard"
   | "sup-validation"
   | "sup-primes"
-  | "sup-baremes";
+  | "sup-baremes"
+  | "sup-equipe";
 
 // ─── Static Data ──────────────────────────────────────────────────────────────
 
@@ -371,11 +373,12 @@ const Sidebar = ({
     { view: "agent-mes-ventes" as View,      icon: List,            label: "Mes ventes"      },
   ];
   const supNav = [
-    { view: "sup-dashboard" as View,  icon: LayoutDashboard, label: "Tableau de bord",     badge: null         },
-    { view: "sup-validation" as View, icon: CheckSquare,     label: "File de validation",  badge: pendingCount },
-    { view: "sup-primes" as View,     icon: BarChart2,       label: "Résultats & primes",   badge: null         },
-    { view: "sup-baremes" as View,    icon: Settings,        label: "Gestion barèmes",     badge: null         },
-  ];
+  { view: "sup-dashboard" as View,  icon: LayoutDashboard, label: "Tableau de bord",    badge: null         },
+  { view: "sup-validation" as View, icon: CheckSquare,     label: "File de validation", badge: pendingCount },
+  { view: "sup-primes" as View,     icon: BarChart2,       label: "Résultats & primes", badge: null         },
+  { view: "sup-equipe" as View,     icon: Users,           label: "Mon équipe",         badge: null         },
+  { view: "sup-baremes" as View,    icon: Settings,        label: "Gestion barèmes",    badge: null         },
+];
   const navItems = role === "agent" ? agentNav : supNav;
 
   return (
@@ -603,100 +606,158 @@ const LoginScreen = () => {
 
 // ─── AGENT DASHBOARD ──────────────────────────────────────────────────────────
 
+const getWeekNumber = (dateStr: string) => {
+  const d = new Date(dateStr);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
+  const week1 = new Date(d.getFullYear(), 0, 4);
+  return 1 + Math.round(((d.getTime() - week1.getTime()) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7);
+};
+
 const AgentDashboard = () => {
-  const { sales } = useSales();
+  const { sales, currentAgentId } = useSales();
+
+  const now = new Date();
+  const currentMonthKey = now.toISOString().slice(0, 7); // ex: "2026-06"
+  const prevDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const prevMonthKey = prevDate.toISOString().slice(0, 7);
+
+  // Ne garder que les ventes de l'agent connecté
+  const mySales = sales.filter(s => s.agentId === currentAgentId);
+  const monthSales = mySales.filter(s => s.date.startsWith(currentMonthKey));
+  const prevMonthSales = mySales.filter(s => s.date.startsWith(prevMonthKey));
+
+  const ventesDuMois = monthSales.length;
+  const enAttente = monthSales.filter(s => s.statut === "Brute").length;
+  const validees = monthSales.filter(s => s.statut === "Nette").length;
+
+  const primesDuMois = monthSales
+    .filter(s => s.statut === "Nette")
+    .reduce((sum, s) => sum + s.prime, 0);
+
+  const primesMoisPrecedent = prevMonthSales
+    .filter(s => s.statut === "Nette")
+    .reduce((sum, s) => sum + s.prime, 0);
+
+  const evolution = primesMoisPrecedent > 0
+    ? Math.round(((primesDuMois - primesMoisPrecedent) / primesMoisPrecedent) * 100)
+    : null;
+
+  // Évolution hebdomadaire des primes (ventes Nette du mois, groupées par semaine ISO)
+  const weeklyMap = new Map<number, number>();
+  monthSales.filter(s => s.statut === "Nette").forEach(s => {
+    const w = getWeekNumber(s.date);
+    weeklyMap.set(w, (weeklyMap.get(w) || 0) + s.prime);
+  });
+  const weeklyPrimes = Array.from(weeklyMap.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([w, total]) => ({ semaine: `S${w}`, primes: total }));
+
+  // Répartition produits (% des ventes du mois)
+  const distMap = new Map<string, number>();
+  monthSales.forEach(s => distMap.set(s.type, (distMap.get(s.type) || 0) + 1));
+  const totalVentes = monthSales.length || 1;
+  const productDist = PRODUCTS
+    .map(p => ({ name: p, value: Math.round(((distMap.get(p) || 0) / totalVentes) * 100) }))
+    .filter(p => p.value > 0);
+
+  const moisLabel = now.toLocaleDateString("fr-FR", { month: "long", year: "numeric" });
+
   return (
-  <div className="p-8 space-y-7">
-    <div className="grid grid-cols-4 gap-5">
-      <StatCard icon={ShoppingCart} label="Ventes du mois"  value="23"      sub="Juin 2026"      accent="bg-[#1D4ED8]"  />
-      <StatCard icon={Clock}        label="En attente"      value="4"       sub="À valider"       accent="bg-amber-500"  />
-      <StatCard icon={Check}        label="Validées"        value="17"      sub="Ce mois"         accent="bg-emerald-500"/>
-      <StatCard icon={Euro}         label="Primes du mois"  value="775 €"   sub="+12% vs mai"     accent="bg-violet-500" />
-    </div>
-
-    <div className="grid grid-cols-5 gap-6">
-      {/* Weekly bar chart */}
-      <div className="col-span-3 bg-white rounded-2xl p-6 border border-black/[0.06]">
-        <div className="flex items-center justify-between mb-5">
-          <div>
-            <h3 className="font-bold text-[#0F2056] text-sm">Évolution des primes</h3>
-            <p className="text-xs text-slate-400">Par semaine — Juin 2026</p>
-          </div>
-          <span className="text-xs bg-blue-50 text-[#1D4ED8] font-semibold px-2.5 py-1 rounded-lg">Mensuel</span>
-        </div>
-        <ResponsiveContainer width="100%" height={200}>
-          <BarChart data={WEEKLY_PRIMES} barSize={36}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
-            <XAxis dataKey="semaine" tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
-            <YAxis tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} unit=" €" />
-            <Tooltip
-              formatter={(v: any) => [`${v} €`, "Prime"]}
-              contentStyle={{ borderRadius: 12, border: "none", boxShadow: "0 4px 24px rgba(0,0,0,0.10)", fontSize: 12 }}
-            />
-            <Bar dataKey="primes" fill="#1D4ED8" radius={[6, 6, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
+    <div className="p-8 space-y-7">
+      <div className="grid grid-cols-4 gap-5">
+        <StatCard icon={ShoppingCart} label="Ventes du mois" value={String(ventesDuMois)} sub={moisLabel} accent="bg-[#1D4ED8]" />
+        <StatCard icon={Clock} label="En attente" value={String(enAttente)} sub="À valider" accent="bg-amber-500" />
+        <StatCard icon={Check} label="Validées" value={String(validees)} sub="Ce mois" accent="bg-emerald-500" />
+        <StatCard
+          icon={Euro}
+          label="Primes du mois"
+          value={`${primesDuMois} €`}
+          sub={evolution !== null ? `${evolution >= 0 ? "+" : ""}${evolution}% vs mois préc.` : "Ce mois"}
+          accent="bg-violet-500"
+        />
       </div>
 
-      {/* Product breakdown */}
-      <div className="col-span-2 bg-white rounded-2xl p-6 border border-black/[0.06]">
-        <h3 className="font-bold text-[#0F2056] text-sm mb-1">Répartition produits</h3>
-        <p className="text-xs text-slate-400 mb-5">Ventes du mois en cours</p>
-        <div className="space-y-3.5">
-          {PRODUCT_DIST.map(p => (
-            <div key={p.name}>
-              <div className="flex justify-between text-xs mb-1.5">
-                <span className="font-semibold text-slate-700">{p.name}</span>
-                <span className="text-slate-400 font-mono">{p.value}%</span>
-              </div>
-              <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                <div
-                  className="h-full rounded-full transition-all"
-                  style={{ width: `${p.value}%`, backgroundColor: PRODUCT_COLORS[p.name as Product] }}
-                />
-              </div>
+      <div className="grid grid-cols-5 gap-6">
+        <div className="col-span-3 bg-white rounded-2xl p-6 border border-black/[0.06]">
+          <div className="flex items-center justify-between mb-5">
+            <div>
+              <h3 className="font-bold text-[#0F2056] text-sm">Évolution des primes</h3>
+              <p className="text-xs text-slate-400">Par semaine — {moisLabel}</p>
             </div>
-          ))}
+            <span className="text-xs bg-blue-50 text-[#1D4ED8] font-semibold px-2.5 py-1 rounded-lg">Mensuel</span>
+          </div>
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={weeklyPrimes} barSize={36}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
+              <XAxis dataKey="semaine" tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} unit=" €" />
+              <Tooltip
+                formatter={(v: any) => [`${v} €`, "Prime"]}
+                contentStyle={{ borderRadius: 12, border: "none", boxShadow: "0 4px 24px rgba(0,0,0,0.10)", fontSize: 12 }}
+              />
+              <Bar dataKey="primes" fill="#1D4ED8" radius={[6, 6, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className="col-span-2 bg-white rounded-2xl p-6 border border-black/[0.06]">
+          <h3 className="font-bold text-[#0F2056] text-sm mb-1">Répartition produits</h3>
+          <p className="text-xs text-slate-400 mb-5">Ventes du mois en cours</p>
+          <div className="space-y-3.5">
+            {productDist.length === 0 ? (
+              <p className="text-sm text-slate-400">Aucune vente ce mois-ci.</p>
+            ) : productDist.map(p => (
+              <div key={p.name}>
+                <div className="flex justify-between text-xs mb-1.5">
+                  <span className="font-semibold text-slate-700">{p.name}</span>
+                  <span className="text-slate-400 font-mono">{p.value}%</span>
+                </div>
+                <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all"
+                    style={{ width: `${p.value}%`, backgroundColor: PRODUCT_COLORS[p.name as Product] }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
-    </div>
 
-    {/* Recent sales */}
-    <div className="bg-white rounded-2xl border border-black/[0.06] overflow-hidden">
-      <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-        <h3 className="font-bold text-[#0F2056] text-sm">Dernières ventes saisies</h3>
-        <span className="text-xs text-slate-400">5 entrées récentes</span>
-      </div>
-      <table className="w-full">
-        <thead>
-          <tr className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">
-            <th className="text-left px-6 py-3">Date</th>
-            <th className="text-left px-6 py-3">Produit</th>
-            <th className="text-left px-6 py-3">Offre</th>
-            <th className="text-left px-6 py-3">N° Commande</th>
-            <th className="text-left px-6 py-3">Statut</th>
-            <th className="text-right px-6 py-3">Prime</th>
-          </tr>
-        </thead>
-        <tbody>
-          {sales.slice(0, 5).map(s => (
-            <tr key={s.id} className="border-t border-slate-50 hover:bg-slate-50/60 transition-colors">
-              <td className="px-6 py-3.5 text-sm font-mono text-slate-500">{s.date}</td>
-              <td className="px-6 py-3.5">
-                <span className="text-sm font-bold text-[#0F2056]">{s.type}</span>
-              </td>
-              <td className="px-6 py-3.5 text-sm text-slate-600">{s.offre}</td>
-              <td className="px-6 py-3.5 text-sm font-mono text-slate-400">{s.numCommande}</td>
-              <td className="px-6 py-3.5"><StatusBadge status={s.statut as Status} /></td>
-              <td className="px-6 py-3.5 text-right text-sm font-bold font-mono text-[#0F2056]">
-                {s.statut === "Nette" ? `${s.prime} €` : <span className="text-slate-300">—</span>}
-              </td>
+      <div className="bg-white rounded-2xl border border-black/[0.06] overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+          <h3 className="font-bold text-[#0F2056] text-sm">Dernières ventes saisies</h3>
+          <span className="text-xs text-slate-400">5 entrées récentes</span>
+        </div>
+        <table className="w-full">
+          <thead>
+            <tr className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">
+              <th className="text-left px-6 py-3">Date</th>
+              <th className="text-left px-6 py-3">Produit</th>
+              <th className="text-left px-6 py-3">Offre</th>
+              <th className="text-left px-6 py-3">N° Commande</th>
+              <th className="text-left px-6 py-3">Statut</th>
+              <th className="text-right px-6 py-3">Prime</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {mySales.slice(0, 5).map(s => (
+              <tr key={s.id} className="border-t border-slate-50 hover:bg-slate-50/60 transition-colors">
+                <td className="px-6 py-3.5 text-sm font-mono text-slate-500">{s.date}</td>
+                <td className="px-6 py-3.5"><span className="text-sm font-bold text-[#0F2056]">{s.type}</span></td>
+                <td className="px-6 py-3.5 text-sm text-slate-600">{s.offre}</td>
+                <td className="px-6 py-3.5 text-sm font-mono text-slate-400">{s.numCommande}</td>
+                <td className="px-6 py-3.5"><StatusBadge status={s.statut as Status} /></td>
+                <td className="px-6 py-3.5 text-right text-sm font-bold font-mono text-[#0F2056]">
+                  {s.statut === "Nette" ? `${s.prime} €` : <span className="text-slate-300">—</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
-  </div>
   );
 };
 
@@ -704,17 +765,17 @@ const AgentDashboard = () => {
 
 const NouvelleVente = () => {
   const { addSale } = useSales();
-  const [date, setDate]       = useState("2026-06-30");
-  const [pointVente, setPointVente] = useState("");
+  const [date, setDate]       = useState(() => new Date().toISOString().slice(0, 10));
   const [produit, setProduit] = useState<Product | "">("");
   const [offre, setOffre]     = useState("");
   const [numCommande, setNumCommande] = useState("");
-  const [numBascule, setNumBascule]   = useState("");
+  const [numTelephone, setNumTelephone] = useState("");
   const [domaine, setDomaine] = useState("FAI");
   const [valeur, setValeur]   = useState("");
   const [porta, setPorta]     = useState(false);
   const [pto, setPto]         = useState(false);
   const [conv, setConv]       = useState(false);
+  const [option, setOption]   = useState<string>("");
   const [done, setDone]       = useState(false);
   const [saving, setSaving]   = useState(false);
   const [error, setError]     = useState<string | null>(null);
@@ -724,7 +785,7 @@ const NouvelleVente = () => {
 
   const reset = () => {
     setDone(false); setProduit(""); setOffre(""); setPorta(false); setPto(false); setConv(false);
-    setNumCommande(""); setNumBascule(""); setPointVente(""); setValeur(""); setDomaine("FAI"); setError(null);
+    setNumCommande(""); setNumTelephone(""); setValeur(""); setDomaine("FAI"); setOption(""); setError(null);
   };
 
   const submit = async () => {
@@ -740,13 +801,13 @@ const NouvelleVente = () => {
         type: produit,
         offre,
         numCommande,
-        numBascule,
+        numBascule: numTelephone,
         domaine,
         porta,
         pto,
         convergence: conv,
         valeur: Number(valeur),
-        pointVente,
+        pointVente: "",
       });
       setDone(true);
     } catch (e) {
@@ -790,11 +851,10 @@ const NouvelleVente = () => {
                 <input type="date" value={date} onChange={e => setDate(e.target.value)} className={inputCls} />
               </div>
               <div>
-                <label className={labelCls}>Point de vente</label>
-                <input type="text" value={pointVente} onChange={e => setPointVente(e.target.value)} placeholder="ex: Paris 11e" className={inputCls} />
+                <label className={labelCls}>N° téléphone</label>
+                <input type="text" value={numTelephone} onChange={e => setNumTelephone(e.target.value)} placeholder="06 XX XX XX XX" className={inputCls + " font-mono"} />
               </div>
             </div>
-
             {/* Row 2 */}
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -829,8 +889,16 @@ const NouvelleVente = () => {
                 <input type="text" value={numCommande} onChange={e => setNumCommande(e.target.value)} placeholder="CMD-2026-XXXX" className={inputCls + " font-mono"} />
               </div>
               <div>
-                <label className={labelCls}>N° bascule</label>
-                <input type="text" value={numBascule} onChange={e => setNumBascule(e.target.value)} placeholder="BAS-XXXX" className={inputCls + " font-mono"} />
+                <label className={labelCls}>Option</label>
+                <select
+                  value={option}
+                  onChange={e => setOption(e.target.value)}
+                  className={inputCls + " cursor-pointer"}
+                >
+                  <option value="">Sélectionner...</option>
+                  <option value="oui">Oui</option>
+                  <option value="non">Non</option>
+                </select>
               </div>
             </div>
 
@@ -1649,6 +1717,166 @@ const GestionBaremes = () => {
     </div>
   );
 };
+// ─── MON ÉQUIPE ───────────────────────────────────────────────────────────────
+
+const MonEquipe = () => {
+  const [agents, setAgents] = useState<ApiAgent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [showForm, setShowForm] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [form, setForm] = useState({ nom: "", email: "", logAdmcc: "", password: "", confirm: "" });
+  const [formError, setFormError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  const inputCls = "w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-[#1D4ED8] transition-all";
+  const labelCls = "block text-sm font-semibold text-slate-700 mb-1.5";
+
+  const load = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await listMyTeam();
+      setAgents(data);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur de chargement");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { void load(); }, []);
+
+  const submit = async () => {
+    setFormError(null);
+    setSuccess(null);
+    if (!form.nom.trim()) { setFormError("Le nom est requis."); return; }
+    if (!form.email.trim()) { setFormError("L'email est requis."); return; }
+    if (form.password.length < 6) { setFormError("Le mot de passe doit faire au moins 6 caractères."); return; }
+    if (form.password !== form.confirm) { setFormError("Les mots de passe ne correspondent pas."); return; }
+
+    setBusy(true);
+    try {
+      await createAgent({
+        nom: form.nom,
+        email: form.email,
+        logAdmcc: form.logAdmcc || undefined,
+        password: form.password,
+      });
+      setSuccess(`Agent ${form.nom} créé avec succès !`);
+      setForm({ nom: "", email: "", logAdmcc: "", password: "", confirm: "" });
+      setShowForm(false);
+      await load();
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : "Erreur lors de la création");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async (id: number, nom: string) => {
+    if (!confirm(`Supprimer l'agent ${nom} ?`)) return;
+    try {
+      await deleteAgent(id);
+      setSuccess(`Agent ${nom} supprimé.`);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur lors de la suppression");
+    }
+  };
+
+  return (
+    <div className="p-8">
+      <div className="flex items-center justify-between mb-6">
+        <p className="text-sm text-slate-500">{agents.length} agent{agents.length > 1 ? "s" : ""} dans votre équipe</p>
+        <button
+          onClick={() => { setShowForm(!showForm); setFormError(null); setSuccess(null); }}
+          className="flex items-center gap-2 px-4 py-2.5 bg-[#1D4ED8] hover:bg-[#1E40AF] rounded-xl text-sm font-semibold text-white transition-colors"
+        >
+          <Plus size={15} />
+          Ajouter un agent
+        </button>
+      </div>
+
+      {error && <div className="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-2.5">{error}</div>}
+      {success && <div className="mb-4 text-sm text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2.5">{success}</div>}
+
+      {showForm && (
+        <div className="bg-blue-50/70 border border-blue-200/70 rounded-2xl p-6 mb-6">
+          <h3 className="text-sm font-bold text-[#0F2056] mb-4">Nouveau compte agent</h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className={labelCls}>Nom complet *</label>
+              <input type="text" value={form.nom} onChange={e => setForm(f => ({ ...f, nom: e.target.value }))} placeholder="Prénom Nom" className={inputCls} />
+            </div>
+            <div>
+              <label className={labelCls}>Email *</label>
+              <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="prenom.nom@gestprimes.fr" className={inputCls} />
+            </div>
+            <div>
+              <label className={labelCls}>Log ADMCC</label>
+              <input type="text" value={form.logAdmcc} onChange={e => setForm(f => ({ ...f, logAdmcc: e.target.value }))} placeholder="ex: ADOCC019" className={inputCls} />
+            </div>
+            <div />
+            <div>
+              <label className={labelCls}>Mot de passe *</label>
+              <input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} placeholder="min 6 caractères" className={inputCls} />
+            </div>
+            <div>
+              <label className={labelCls}>Confirmer le mot de passe *</label>
+              <input type="password" value={form.confirm} onChange={e => setForm(f => ({ ...f, confirm: e.target.value }))} placeholder="••••••••" className={inputCls} />
+            </div>
+          </div>
+          {formError && <div className="mt-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-2.5">{formError}</div>}
+          <div className="flex justify-end gap-3 mt-4">
+            <button onClick={() => setShowForm(false)} className="px-4 py-2 text-sm text-slate-500 hover:text-slate-700">Annuler</button>
+            <button
+              onClick={() => void submit()}
+              disabled={busy}
+              className="px-5 py-2.5 bg-[#1D4ED8] text-white rounded-xl text-sm font-semibold hover:bg-[#1E40AF] transition-colors disabled:opacity-50"
+            >
+              {busy ? "Création..." : "Créer le compte"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="bg-white rounded-2xl border border-black/[0.06] overflow-hidden">
+        <table className="w-full">
+          <thead>
+            <tr className="text-[11px] text-slate-400 font-bold uppercase tracking-wider border-b border-slate-100">
+              <th className="text-left px-6 py-4">Nom</th>
+              <th className="text-left px-6 py-4">Email</th>
+              <th className="text-left px-6 py-4">Log ADMCC</th>
+              <th className="text-right px-6 py-4">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr><td colSpan={4} className="px-6 py-8 text-center text-sm text-slate-400">Chargement…</td></tr>
+            ) : agents.length === 0 ? (
+              <tr><td colSpan={4} className="px-6 py-8 text-center text-sm text-slate-400">Aucun agent dans votre équipe.</td></tr>
+            ) : agents.map(a => (
+              <tr key={a.id} className="border-t border-slate-50 hover:bg-slate-50/60 transition-colors">
+                <td className="px-6 py-3.5 text-sm font-bold text-[#0F2056]">{a.nom ?? displayName(a.email)}</td>
+                <td className="px-6 py-3.5 text-sm text-slate-500">{a.email}</td>
+                <td className="px-6 py-3.5 text-sm font-mono text-slate-400">{a.logAdmcc ?? "—"}</td>
+                <td className="px-6 py-3.5 text-right">
+                  <button
+                    onClick={() => void remove(a.id, a.nom ?? a.email)}
+                    className="px-3 py-1.5 text-xs font-semibold text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                  >
+                    Supprimer
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
 
 // ─── ROOT ─────────────────────────────────────────────────────────────────────
 
@@ -1699,6 +1927,7 @@ const Dashboard = () => {
     "sup-validation":     { title: "File de validation",  sub: "Ventes en attente de traitement" },
     "sup-primes":         { title: "Résultats & primes",   sub: "CA, primes, heures travaillées et objectif CA/h par agent" },
     "sup-baremes":        { title: "Gestion des barèmes", sub: "Tarification des primes — historique et édition" },
+    "sup-equipe":         { title: "Mon équipe",          sub: "Gérer les agents rattachés à votre équipe" },
   };
 
   const renderView = () => {
@@ -1710,6 +1939,7 @@ const Dashboard = () => {
       case "sup-validation":      return <FileValidation />;
       case "sup-primes":          return <TableauPrimes />;
       case "sup-baremes":         return <GestionBaremes />;
+      case "sup-equipe":          return <MonEquipe />;
       default:                    return null;
     }
   };

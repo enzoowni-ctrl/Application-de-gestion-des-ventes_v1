@@ -28,6 +28,22 @@ class UserController extends AbstractController
         return $this->json(array_map($this->serialize(...), $this->users->findAll()));
     }
 
+    #[Route('/my-team', name: 'users_my_team', methods: ['GET'])]
+    public function myTeam(): JsonResponse
+    {
+        $current = $this->getUser();
+        if (!$current instanceof User) {
+            return $this->json(['error' => 'Not authenticated'], Response::HTTP_UNAUTHORIZED);
+        }
+
+        $agents = $this->users->findBy(
+            ['manager' => $current],
+            ['email' => 'ASC']
+        );
+
+        return $this->json(array_map($this->serialize(...), $agents));
+    }
+
     #[Route('/{id}', name: 'user_show', methods: ['GET'], requirements: ['id' => '\d+'])]
     public function show(int $id): JsonResponse
     {
@@ -83,37 +99,82 @@ class UserController extends AbstractController
     #[Route('', name: 'user_create', methods: ['POST'])]
     public function create(Request $request): JsonResponse
     {
+        $current = $this->getUser();
+        if (!$current instanceof User) {
+            return $this->json(['error' => 'Not authenticated'], Response::HTTP_UNAUTHORIZED);
+        }
+
         $data = json_decode($request->getContent(), true);
         if (!is_array($data)) {
             return $this->json(['error' => 'Invalid JSON body'], Response::HTTP_BAD_REQUEST);
         }
 
-        $email = $data['email'] ?? null;
+        $email    = $data['email'] ?? null;
         $password = $data['password'] ?? null;
+        $nom      = $data['nom'] ?? null;
+        $logAdmcc = $data['logAdmcc'] ?? null;
+
         $errors = [];
+        if (!is_string($nom) || trim($nom) === '') {
+            $errors[] = 'nom: requis';
+        }
         if (!is_string($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            $errors[] = 'email: required valid email';
+            $errors[] = 'email: requis et doit être valide';
         } elseif ($this->users->findOneBy(['email' => $email])) {
-            $errors[] = 'email: already in use';
+            $errors[] = 'email: déjà utilisé';
         }
         if (!is_string($password) || strlen($password) < 6) {
-            $errors[] = 'password: required, min 6 chars';
+            $errors[] = 'password: requis, min 6 caractères';
         }
         if ($errors) {
             return $this->json(['errors' => $errors], Response::HTTP_BAD_REQUEST);
         }
 
+        // Si c'est un sup/admin qui crée, l'agent lui est rattaché
+        $roles = $current->getRoles();
+        $isSupOrAdmin = in_array('ROLE_SUPERVISEUR', $roles) 
+                     || in_array('ROLE_ADMIN', $roles)
+                     || in_array('ROLE_CHEF_PLATEAU', $roles);
+
         $user = new User();
         $user->setEmail($email);
-        // Public self-registration only ever grants the base role; elevated
-        // roles (e.g. ROLE_SUPERVISEUR) are granted out-of-band (app:create-user).
-        $user->setRoles(['ROLE_USER']);
+        $user->setNom($nom);
+        $user->setLogAdmcc($logAdmcc);
+        $user->setRoles(['ROLE_AGENT']);
         $user->setPassword($this->hasher->hashPassword($user, $password));
+
+        if ($isSupOrAdmin) {
+            $user->setManager($current);
+        }
 
         $this->em->persist($user);
         $this->em->flush();
 
         return $this->json($this->serialize($user), Response::HTTP_CREATED);
+    }
+
+    #[Route('/{id}', name: 'user_delete', methods: ['DELETE'], requirements: ['id' => '\d+'])]
+    public function delete(int $id): JsonResponse
+    {
+        $current = $this->getUser();
+        if (!$current instanceof User) {
+            return $this->json(['error' => 'Not authenticated'], Response::HTTP_UNAUTHORIZED);
+        }
+
+        $agent = $this->users->find($id);
+        if (!$agent instanceof User) {
+            return $this->json(['error' => 'Agent introuvable'], Response::HTTP_NOT_FOUND);
+        }
+
+        // Vérifier que l'agent appartient bien au superviseur connecté
+        if ($agent->getManager()?->getId() !== $current->getId()) {
+            return $this->json(['error' => 'Accès refusé'], Response::HTTP_FORBIDDEN);
+        }
+
+        $this->em->remove($agent);
+        $this->em->flush();
+
+        return $this->json(['success' => true]);
     }
 
     /**
@@ -124,10 +185,12 @@ class UserController extends AbstractController
         $manager = $user->getManager();
 
         return [
-            'id' => $user->getId(),
-            'email' => $user->getEmail(),
-            'roles' => $user->getRoles(),
-            'manager' => $manager ? ['id' => $manager->getId(), 'email' => $manager->getEmail()] : null,
+            'id'       => $user->getId(),
+            'nom'      => $user->getNom(),
+            'email'    => $user->getEmail(),
+            'logAdmcc' => $user->getLogAdmcc(),
+            'roles'    => $user->getRoles(),
+            'manager'  => $manager ? ['id' => $manager->getId(), 'email' => $manager->getEmail()] : null,
         ];
     }
 }

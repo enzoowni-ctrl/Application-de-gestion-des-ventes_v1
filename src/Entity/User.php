@@ -52,6 +52,12 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     #[ORM\OneToMany(targetEntity: self::class, mappedBy: 'manager')]
     private Collection $agents;
 
+    #[ORM\Column(length: 255, nullable: true)]
+    private ?string $nom = null;
+
+    #[ORM\Column(length: 50, nullable: true)]
+    private ?string $logAdmcc = null;
+
     public function __construct()
     {
         $this->sales = new ArrayCollection();
@@ -200,6 +206,30 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
                 $agent->setManager(null);
             }
         }
+
+        return $this;
+    }
+
+    public function getNom(): ?string
+    {
+        return $this->nom;
+    }
+
+    public function setNom(?string $nom): static
+    {
+        $this->nom = $nom;
+
+        return $this;
+    }
+
+    public function getLogAdmcc(): ?string
+    {
+        return $this->logAdmcc;
+    }
+
+    public function setLogAdmcc(?string $logAdmcc): static
+    {
+        $this->logAdmcc = $logAdmcc;
 
         return $this;
     }

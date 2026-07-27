@@ -171,3 +171,29 @@ export const displayName = (email: string | null | undefined): string => {
     .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
     .join(" ");
 };
+// ─── Mon équipe ───────────────────────────────────────────────────────────────
+
+export interface ApiAgent {
+  id: number;
+  nom: string | null;
+  email: string;
+  logAdmcc: string | null;
+  roles: string[];
+  manager?: { id: number; email: string } | null;
+}
+
+export interface CreateAgentPayload {
+  nom: string;
+  email: string;
+  logAdmcc?: string;
+  password: string;
+}
+
+export const listMyTeam = () =>
+  http<ApiAgent[]>("/users/my-team");
+
+export const createAgent = (payload: CreateAgentPayload) =>
+  http<ApiAgent>("/users", { method: "POST", body: JSON.stringify(payload) });
+
+export const deleteAgent = (id: number) =>
+  http<void>(`/users/${id}`, { method: "DELETE" });
